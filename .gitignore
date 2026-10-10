@@ -12,3 +12,7 @@ build/
 .pytest_cache/
 .ruff_cache/
 .DS_Store
+
+# Board wifi credentials. Copy secrets.h.example and fill in locally.
+firmware/cyd/include/secrets.h
+firmware/cyd/.pio/
