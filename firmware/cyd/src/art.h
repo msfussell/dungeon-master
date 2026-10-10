@@ -1,107 +1,126 @@
-// The dragon and the scroll, drawn rather than stored.
+// Pictures drawn rather than stored. No SD card and no image files: a 240x320
+// bitmap is ~150KB in RGB565 and this sketch has about 349KB of app flash
+// left, so a few hundred bytes of primitives is the better trade.
 //
-// No SD card and no image file: a 240x320 bitmap is ~150KB in RGB565, which
-// will not fit the flash this sketch has left. Primitives cost a few hundred
-// bytes of code and scale to whatever rectangle they are handed, so the same
-// picture works in the 110px strip left over in the vault and on a full
-// screen at the ending.
-//
-// It is a side view: the dragon coiled in a C around a glowing scroll, head
-// low and turned outward, watching whoever came in.
+// Lesson from the first attempt, which was scrapped: a big organic dragon made
+// of circles reads as a blob. Primitives are good at ARCHITECTURE -- straight
+// edges, arches, blocks, symmetry -- and at ICONS small enough that the eye
+// fills in the rest. So the full-screen picture is a stone doorway, and the
+// dragon is a 28px glyph.
 
 #pragma once
 #include <TFT_eSPI.h>
 
-// Iron scales, warm parchment, and a glow that reads as light rather than paint.
-#define ART_DRAGON   0x6B4D      // iron grey-green
-#define ART_DRAGON_D 0x4208      // its shadowed side
-#define ART_SPINE    0x9CD3      // spines and claws, lighter
-#define ART_EYE      0xFD20      // amber, the only warm thing in the beast
-#define ART_SCROLL   0xEF5B      // old paper
-#define ART_SCROLL_D 0xB596      // the rolled edge
-#define ART_GLOW1    0x8200      // dim gold
-#define ART_GLOW2    0xC300      // mid
-#define ART_GLOW3    0xFEA0      // bright
+#define ART_STONE    0x5AEB
+#define ART_STONE_D  0x31A6
+#define ART_STONE_L  0x7BCF
+#define ART_MORTAR   0x2104
+#define ART_VOID     0x0000
+#define ART_EYE      0xFD20
+#define ART_FLAME    0xFC00
+#define ART_FLAME_L  0xFEA0
+#define ART_SCALE    0x5BEC
+#define ART_PAPER    0xEF5B
+#define ART_PAPER_D  0xB596
+#define ART_GLOW     0xFEA0
 
-// One segment of the coiled body: a circle, so overlapping them makes a thick
-// smooth curve without any curve maths.
-inline void artCoilSegment(TFT_eSPI &tft, int cx, int cy, int r) {
-  tft.fillCircle(cx, cy, r, ART_DRAGON);
-  tft.fillCircle(cx - r / 3, cy + r / 3, r * 2 / 3, ART_DRAGON_D);
+// ---------------------------------------------------------------------------
+// A dragon's head, about 28px. Small enough that suggestion does the work:
+// a snout, a horn, an eye and a breath of fire is a dragon; the same shapes at
+// 120px are a mess, which is what went wrong the first time.
+// ---------------------------------------------------------------------------
+inline void artMiniDragon(TFT_eSPI &tft, int x, int y, int s = 28) {
+  int h = s / 2;                       // head radius-ish
+  int cx = x + h, cy = y + h;
+
+  // skull and jaw
+  tft.fillCircle(cx, cy, h * 8 / 10, ART_SCALE);
+  tft.fillTriangle(cx, cy - h / 3, cx, cy + h / 2,
+                   cx + h * 15 / 10, cy + h / 5, ART_SCALE);   // snout
+  tft.fillTriangle(cx - h / 5, cy - h * 7 / 10,
+                   cx + h / 2, cy - h / 4,
+                   cx - h * 9 / 10, cy - h * 15 / 10, ART_STONE_L);  // horn
+  tft.fillTriangle(cx - h * 7 / 10, cy + h / 5,
+                   cx - h * 4 / 10, cy + h * 9 / 10,
+                   cx - h * 14 / 10, cy + h * 8 / 10, ART_SCALE);    // neck frill
+
+  // the eye: the only warm thing in the animal
+  tft.fillCircle(cx + h / 4, cy - h / 4, s / 9 + 1, ART_EYE);
+  tft.drawPixel(cx + h / 4, cy - h / 4, ART_VOID);
+
+  // a breath of fire, two tapering triangles
+  int mx = cx + h * 15 / 10, my = cy + h / 5;
+  tft.fillTriangle(mx, my - s / 10, mx, my + s / 10, mx + s / 2, my, ART_FLAME);
+  tft.fillTriangle(mx, my - s / 16, mx, my + s / 16, mx + s / 3, my, ART_FLAME_L);
 }
 
-// cx,cy is the centre of the coil; `s` scales everything, so one routine
-// serves both the inline strip and the full-screen ending.
-inline void artDragonAndScroll(TFT_eSPI &tft, int cx, int cy, int s) {
-  // ---- the glow behind the scroll, brightest at the middle ----
-  tft.fillCircle(cx, cy, s * 38 / 10, ART_GLOW1);
-  tft.fillCircle(cx, cy, s * 28 / 10, ART_GLOW2);
-  tft.fillCircle(cx, cy, s * 18 / 10, ART_GLOW3);
-
-  // ---- the coil: segments around a C, open at the right where the head is --
-  // Angles in degrees, walking anticlockwise from the lower right.
-  const int coilR = s * 46 / 10;
-  const int body  = s * 11 / 10;
-  for (int a = 35; a <= 300; a += 11) {
-    float rad = a * 0.01745329f;
-    int px = cx + (int)(cosf(rad) * coilR);
-    int py = cy - (int)(sinf(rad) * coilR * 0.82f);   // flatten: it is coiled, not a ball
-    artCoilSegment(tft, px, py, body);
-  }
-
-  // ---- spines along the outside of the coil ----
-  for (int a = 60; a <= 280; a += 22) {
-    float rad = a * 0.01745329f;
-    int bx = cx + (int)(cosf(rad) * (coilR + body * 0.6f));
-    int by = cy - (int)(sinf(rad) * (coilR + body * 0.6f) * 0.82f);
-    int tx = cx + (int)(cosf(rad) * (coilR + body * 1.8f));
-    int ty = cy - (int)(sinf(rad) * (coilR + body * 1.8f) * 0.82f);
-    tft.fillTriangle(bx - s / 4, by, bx + s / 4, by, tx, ty, ART_SPINE);
-  }
-
-  // ---- the scroll, lying across the middle of the coil ----
-  int sw = s * 30 / 10, sh = s * 8 / 10;
-  tft.fillRect(cx - sw / 2, cy - sh / 2, sw, sh, ART_SCROLL);
-  // rolled ends
-  tft.fillCircle(cx - sw / 2, cy, sh / 2 + 1, ART_SCROLL_D);
-  tft.fillCircle(cx + sw / 2, cy, sh / 2 + 1, ART_SCROLL_D);
-  tft.fillCircle(cx - sw / 2, cy, sh / 4, ART_SCROLL);
-  tft.fillCircle(cx + sw / 2, cy, sh / 4, ART_SCROLL);
-  // writing, suggested not spelled
-  for (int i = 1; i <= 3; i++) {
-    int ly = cy - sh / 2 + i * sh / 4;
-    tft.drawFastHLine(cx - sw / 3, ly, sw * 2 / 3 - (i == 3 ? sw / 4 : 0), ART_SCROLL_D);
-  }
-
-  // ---- the head, low and to the right, turned out of the coil ----
-  int hx = cx + coilR + body / 2, hy = cy + (int)(s * 1.5f);
-  tft.fillCircle(hx, hy, body * 11 / 10, ART_DRAGON);          // skull
-  tft.fillTriangle(hx, hy - body / 2, hx, hy + body / 2,
-                   hx + body * 23 / 10, hy + body / 4, ART_DRAGON);  // snout
-  tft.fillTriangle(hx - body / 2, hy - body, hx + body / 3, hy - body / 3,
-                   hx - body * 3 / 2, hy - body * 2, ART_SPINE);     // horn
-  tft.fillCircle(hx + body / 3, hy - body / 3, s / 4 + 1, ART_EYE);  // the eye
-  // a wisp of breath, because a still dragon still breathes
-  tft.drawFastHLine(hx + body * 24 / 10, hy + body / 4, s, ART_GLOW2);
-  tft.drawFastHLine(hx + body * 26 / 10, hy + body / 4 + 2, s * 7 / 10, ART_GLOW1);
-
-  // ---- tail, tapering away from the open end of the coil ----
-  int tx0 = cx + (int)(cosf(35 * 0.01745329f) * coilR);
-  int ty0 = cy - (int)(sinf(35 * 0.01745329f) * coilR * 0.82f);
-  for (int i = 0; i < 5; i++) {
-    int r = body - i * body / 5;
-    if (r < 1) r = 1;
-    tft.fillCircle(tx0 + i * body, ty0 - i * body / 2, r, ART_DRAGON);
-  }
-  tft.fillTriangle(tx0 + 5 * body, ty0 - 2 * body,
-                   tx0 + 6 * body, ty0 - 3 * body,
-                   tx0 + 4 * body, ty0 - 3 * body, ART_SPINE);
+// A rolled scroll glyph, same scale, to sit beside it.
+inline void artMiniScroll(TFT_eSPI &tft, int x, int y, int s = 28) {
+  int w = s, h = s / 2;
+  int cy = y + s / 2;
+  tft.fillCircle(x + w / 2, cy, h * 9 / 10, ART_GLOW);     // its glow
+  tft.fillRect(x + 3, cy - h / 3, w - 6, h * 2 / 3, ART_PAPER);
+  tft.fillCircle(x + 3, cy, h / 3, ART_PAPER_D);
+  tft.fillCircle(x + w - 3, cy, h / 3, ART_PAPER_D);
+  tft.drawFastHLine(x + 6, cy - h / 8, w - 12, ART_PAPER_D);
+  tft.drawFastHLine(x + 6, cy + h / 8, w - 16, ART_PAPER_D);
 }
 
-// Fit the drawing to whatever rectangle is free, so the caller never has to
-// know how big it is.
-inline void artDragonFit(TFT_eSPI &tft, int x, int y, int w, int h) {
-  int s = (w < h * 2 ? w : h * 2) / 12;
-  if (s < 3) s = 3;
-  artDragonAndScroll(tft, x + w / 2, y + h / 2, s);
+// ---------------------------------------------------------------------------
+// The boot screen: a stone doorway with nothing good behind it.
+// ---------------------------------------------------------------------------
+inline void artDungeonEntrance(TFT_eSPI &tft, int w, int h) {
+  tft.fillScreen(ART_MORTAR);
+
+  // --- the wall, courses of block with staggered joints ---
+  const int bh = 22;
+  for (int row = 0, y = 0; y < h; row++, y += bh) {
+    int offset = (row % 2) ? -26 : 0;
+    for (int x = offset; x < w; x += 52) {
+      tft.fillRect(x + 1, y + 1, 50, bh - 2,
+                   (row + x / 52) % 3 == 0 ? ART_STONE_D : ART_STONE);
+    }
+  }
+
+  // --- the doorway: a round arch over square jambs ---
+  const int doorW = 128, doorH = 190;
+  const int dx = (w - doorW) / 2;
+  const int dy = h - doorH - 34;          // leave room for steps
+  const int archR = doorW / 2;
+  const int archCy = dy + archR;
+
+  // voussoirs: a ring of pale stone around the opening
+  tft.fillCircle(dx + archR, archCy, archR + 9, ART_STONE_L);
+  tft.fillRect(dx - 9, archCy, doorW + 18, doorH - archR, ART_STONE_L);
+  for (int a = 0; a <= 180; a += 20) {    // joints in the arch
+    float r = a * 0.01745329f;
+    tft.drawLine(dx + archR - (int)(cosf(r) * archR),
+                 archCy - (int)(sinf(r) * archR),
+                 dx + archR - (int)(cosf(r) * (archR + 9)),
+                 archCy - (int)(sinf(r) * (archR + 9)), ART_MORTAR);
+  }
+
+  // the opening itself
+  tft.fillCircle(dx + archR, archCy, archR, ART_VOID);
+  tft.fillRect(dx, archCy, doorW, doorH - archR, ART_VOID);
+
+  // --- two eyes, deep in it, a long way back ---
+  int ey = archCy + 54;
+  tft.fillCircle(dx + archR - 17, ey, 3, ART_EYE);
+  tft.fillCircle(dx + archR + 17, ey, 3, ART_EYE);
+
+  // --- steps down to the threshold ---
+  for (int i = 0; i < 3; i++) {
+    int sy = h - 34 + i * 11;
+    int inset = i * 14;
+    tft.fillRect(dx - 18 + inset, sy, doorW + 36 - inset * 2, 10, ART_STONE);
+    tft.drawFastHLine(dx - 18 + inset, sy, doorW + 36 - inset * 2, ART_STONE_L);
+  }
+
+  // --- a hanging chain each side, because stillness needs something vertical --
+  for (int side = -1; side <= 1; side += 2) {
+    int cxx = dx + archR + side * (archR + 22);
+    for (int yy = dy - 6; yy < dy + 60; yy += 9)
+      tft.drawCircle(cxx, yy, 3, ART_STONE_L);
+  }
 }

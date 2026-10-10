@@ -230,21 +230,26 @@ static void drawScene(JsonDocument &doc) {
     tft.drawString(v.as<const char *>(), 6, y, 2);
     y += ROW_H;
   }
+  // A glyph, not an illustration. Two 28px icons on one band cost about a row
+  // and a half and still read as "dragon" and "scroll"; the full-size version
+  // this replaces read as a blob, because primitives do architecture and
+  // icons well and large organic shapes badly.
   const char *art = doc["art"] | "";
-  if (art[0]) {
-    // The picture replaces the prose rather than squeezing in beside it: the
-    // dragon says what the paragraph would have said, and the rule lines above
-    // (including the reward line) still print in full.
-    int h = btnTop - y - 2;
-    if (h > 40) artDragonFit(tft, 0, y, SCR_W, h);
-    y = btnTop;
-  } else {
-    tft.setTextColor(C_PROSE, C_BG);
-    for (JsonVariant v : doc["prose"].as<JsonArray>()) {
-      if (y + ROW_H > btnTop) break;
-      tft.drawString(v.as<const char *>(), 6, y, 2);
-      y += ROW_H;
-    }
+  if (art[0] && y + 34 <= btnTop) {
+    int band = 30;
+    int gap = 14;
+    int total = 28 + gap + 28;
+    int ax = (SCR_W - total) / 2;
+    artMiniDragon(tft, ax, y + 1, 28);
+    artMiniScroll(tft, ax + 28 + gap, y + 1, 28);
+    y += band + 4;
+  }
+
+  tft.setTextColor(C_PROSE, C_BG);
+  for (JsonVariant v : doc["prose"].as<JsonArray>()) {
+    if (y + ROW_H > btnTop) break;
+    tft.drawString(v.as<const char *>(), 6, y, 2);
+    y += ROW_H;
   }
 
   haveMore = doc["more"] | false;
@@ -463,8 +468,28 @@ void setup() {
     return;
   }
 
-  line(probeRow + 1, "tap to enter the dungeon", C_TITLE);
-  while (!touchRead(nullptr, nullptr, nullptr)) delay(50);
+  // The self test has passed, so stop showing it. A doorway with something
+  // alive behind it is a better first impression than five lines of "ok".
+  artDungeonEntrance(tft, SCR_W, SCR_H);
+  tft.setTextColor(C_TITLE, ART_MORTAR);
+  tft.drawString("DUNGEON MASTER", 52, 8, 2);
+  tft.setTextColor(C_PROSE, ART_MORTAR);
+  tft.drawString("press to enter the dungeon", 26, SCR_H - 16, 2);
+
+  // Let the eyes blink while it waits, so the screen is not simply frozen.
+  bool lit = true;
+  unsigned long last = millis();
+  while (!touchRead(nullptr, nullptr, nullptr)) {
+    if (millis() - last > 1400) {
+      last = millis();
+      lit = !lit;
+      int ey = (SCR_H - 190 - 34) + 64 + 54;
+      uint16_t c = lit ? ART_EYE : ART_VOID;
+      tft.fillCircle(SCR_W / 2 - 17, ey, 3, c);
+      tft.fillCircle(SCR_W / 2 + 17, ey, 3, c);
+    }
+    delay(40);
+  }
   spinner("opening the dungeon...");
   fetchAndDraw("/scene?slot=" + slot);
 }
