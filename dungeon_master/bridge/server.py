@@ -51,6 +51,9 @@ DIRECTIONS = {"n": "north", "s": "south", "e": "east", "w": "west"}
 _client = None
 _runtime = None
 _lock = threading.Lock()
+# slot -> the workflow instance currently holding that slot's adventure.
+# A slot is NOT an instance id: see _instance_for.
+_instance: dict[str, str] = {}
 # Last full prose per slot, so a "more" tap does not cost a turn.
 _full_prose: dict[str, list[str]] = {}
 
@@ -206,23 +209,77 @@ def _short(title: str) -> str:
     return t
 
 
+def _instance_for(slot: str, start_new_if_finished: bool = True) -> str | None:
+    """The workflow instance holding this slot's adventure.
+
+    A slot is not an instance id, and this is the whole reason the function
+    exists. Dapr lets a TERMINAL instance id be reused, so using the slot
+    directly meant that finishing an adventure and beginning the next one
+    silently overwrote the finished one's history -- including the
+    secret_vault_found record, which is the single thing most worth keeping.
+    For a game whose premise is that the history IS the save file, that was the
+    worst possible bug to have.
+
+    So adventures are numbered: cyd-1-1, cyd-1-2, ... Finished runs stay put
+    and stay readable in the console for as long as they are not purged.
+
+    Returns None only when nothing exists and we were asked not to create one.
+    """
+    from ..workflow import cli as wcli
+    from ..workflow import workflow as wf
+
+    cached = _instance.get(slot)
+    if cached:
+        st = _client.get_workflow_state(cached)
+        if st is not None and st.runtime_status not in wcli.TERMINAL_STATES:
+            return cached
+
+    # Walk the numbered runs to find the newest. Only on a cache miss, and
+    # only a handful of reads, because adventures are counted from 1.
+    newest_n, newest_state = 0, None
+    # A bare slot id is an adventure from before numbering existed. Adopt it
+    # rather than abandoning someone mid-game.
+    legacy = _client.get_workflow_state(slot)
+    if legacy is not None and legacy.runtime_status not in wcli.TERMINAL_STATES:
+        _instance[slot] = slot
+        return slot
+
+    n = 1
+    while n < 500:
+        st = _client.get_workflow_state(f"{slot}-{n}")
+        if st is None:
+            break
+        newest_n, newest_state = n, st
+        n += 1
+
+    if newest_state is not None and newest_state.runtime_status not in wcli.TERMINAL_STATES:
+        _instance[slot] = f"{slot}-{newest_n}"
+        return _instance[slot]
+
+    if not start_new_if_finished:
+        return f"{slot}-{newest_n}" if newest_n else None
+
+    # The previous adventure ended (or there was none). The next one gets its
+    # own id, so the ended one survives.
+    nxt = f"{slot}-{newest_n + 1}"
+    _client.schedule_new_workflow(
+        workflow=wf.dungeon_master,
+        input={"rest_seconds": REST_SECONDS},
+        instance_id=nxt,
+    )
+    wcli.wait_for_scene(_client, nxt, 0, "opening", timeout=90)
+    _instance[slot] = nxt
+    log.info("slot %s -> new adventure %s", slot, nxt)
+    return nxt
+
+
 def _ensure_run(slot: str) -> dict:
-    """Resume this slot's adventure, or begin one. One slot, one save."""
+    """Resume this slot's adventure, or begin the next one."""
     from ..workflow import cli as wcli
 
-    state = _client.get_workflow_state(slot)
-    running = state is not None and state.runtime_status not in wcli.TERMINAL_STATES
-    if not running:
-        from ..workflow import workflow as wf
-        _client.schedule_new_workflow(
-            workflow=wf.dungeon_master,
-            input={"rest_seconds": REST_SECONDS},
-            instance_id=slot,
-        )
-        scene, _ = wcli.wait_for_scene(_client, slot, 0, "opening", timeout=90)
-        return _screen(slot, scene or {})
-
-    scene = wcli._decode_status(state.serialized_custom_status)
+    iid = _instance_for(slot)
+    state = _client.get_workflow_state(iid)
+    scene = wcli._decode_status(state.serialized_custom_status) if state else None
     return _screen(slot, scene or {})
 
 
@@ -242,7 +299,8 @@ def _do_command(slot: str, key: str) -> dict:
         # A free action, like `look`: no turn, no event raised, so checking
         # where you are never costs 2 health to the lodestone.
         from ..workflow import cli as wcli
-        state = _client.get_workflow_state(slot)
+        iid = _instance_for(slot)
+        state = _client.get_workflow_state(iid)
         scene = wcli._decode_status(state.serialized_custom_status) if state else None
         if not scene:
             return {"error": "no adventure to map", "slot": slot}
@@ -250,15 +308,20 @@ def _do_command(slot: str, key: str) -> dict:
 
     command = DIRECTIONS.get(key) or ("look" if key == "look" else key)
 
-    state = _client.get_workflow_state(slot)
+    iid = _instance_for(slot)
+    state = _client.get_workflow_state(iid)
     if state is None or state.runtime_status in wcli.TERMINAL_STATES:
         return _ensure_run(slot)
     before = (wcli._decode_status(state.serialized_custom_status) or {}).get("seq", 0)
 
-    wcli.send(_client, slot, command)
-    scene, output = wcli.wait_for_scene(_client, slot, before, "turn", timeout=120)
+    wcli.send(_client, iid, command)
+    scene, output = wcli.wait_for_scene(_client, iid, before, "turn", timeout=120)
     if scene is None:
         return {"error": "the dungeon did not answer", "slot": slot}
+    if output is not None:
+        # Ended. Drop the cached instance so the next command begins a new
+        # adventure under a new id, leaving this one's history intact.
+        _instance.pop(slot, None)
     return _screen(slot, scene, ended=output is not None)
 
 
