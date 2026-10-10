@@ -38,6 +38,12 @@ HOST = os.environ.get("DM_BRIDGE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DM_BRIDGE_PORT", "8080"))
 REST_SECONDS = int(float(os.environ.get("DM_REST_SECONDS", "20")))
 
+# Ask the narrator for prose this screen can actually show. After the title,
+# the HUD, the buttons and the rule lines there is often room for only five
+# short lines -- about 180 characters -- so requesting 2-4 sentences produces
+# text the player never sees. One or two is the honest ask for a 240x320 panel.
+os.environ.setdefault("DM_PROSE_LENGTH", "1-2 short sentences")
+
 # Which button maps to which typed command. The device sends a key, never prose,
 # so the game's parser is only ever handed input it already understands.
 DIRECTIONS = {"n": "north", "s": "south", "e": "east", "w": "west"}

@@ -20,23 +20,38 @@ just calling textwrap.
 
 from __future__ import annotations
 
+import re
 import textwrap
 
-# MEASURED on the panel, not guessed. TFT_eSPI font 2 on this board reports
-# height=16 and a real sentence at 183px for 29 characters -- about 6.3px per
-# character. With a 6px margin each side that is 228px of usable width, so:
+# MEASURED on the panel, not guessed. TFT_eSPI font 2 here reports height 16,
+# and a real sentence measured 183px for 29 characters -- about 6.3px each.
 #
-#   228 / 6.3 ~= 36 characters
-#
-# Wrapping at 24 (the first guess) wasted a third of the width AND produced so
-# many extra lines that the bottom of the prose was clipped. 34 is 36 with a
-# little headroom for a capital-heavy line, since the font is proportional
-# ("M" is 10px, "i" is 4px).
-COLS = 34
-ROWS = 15          # 320px / 18px rows, taking a 16px font plus leading
+# These numbers mirror the firmware's drawing constants exactly. When the two
+# disagree the prose gets clipped, which is the whole class of bug this module
+# exists to prevent, so they are written out in pixels rather than in rows.
+SCR_W, SCR_H = 240, 320
+MARGIN = 6
+TITLE_H = 22          # the room name bar
+HUD_H = 18            # the health/gold line
+ROW_H = 18            # a 16px font plus leading
+BTN_H = 26            # button height -- smaller than it was, to buy text rows
+BTN_GAP = 3
+CHAR_W = 6.3
 
-# Rows the chrome always costs: the title bar and the HUD line.
-CHROME_ROWS = 3
+# Usable text width, 228px, which is about 36 characters. 34 leaves headroom
+# for a capital-heavy line, since the font is proportional ("M" 10px, "i" 4px).
+COLS = 34
+
+
+def text_rows(buttons: list[dict]) -> int:
+    """How many 18px rows are left for rule lines and prose.
+
+    This is the budget the whole module turns on, and it is not a constant: it
+    shrinks as the scene offers more buttons. Four button rows leave nine text
+    rows; six leave five.
+    """
+    btn_px = button_rows(buttons) * (BTN_H + BTN_GAP)
+    return max(0, (SCR_H - TITLE_H - HUD_H - btn_px) // ROW_H)
 
 
 def wrap(text: str, cols: int = COLS) -> list[str]:
@@ -60,7 +75,7 @@ def button_rows(buttons: list[dict]) -> int:
 
 
 def compose(title: str, rule_lines: list[str], prose: str,
-            buttons: list[dict], cols: int = COLS, rows: int = ROWS) -> dict:
+            buttons: list[dict], cols: int = COLS) -> dict:
     """Everything the device needs to draw one screen, and nothing else.
 
     Returns pre-wrapped lines so the device does no text measurement at all.
@@ -69,16 +84,41 @@ def compose(title: str, rule_lines: list[str], prose: str,
     for line in rule_lines or []:
         rule.extend(wrap(line, cols))
 
-    budget = rows - CHROME_ROWS - button_rows(buttons) - len(rule)
+    budget = text_rows(buttons) - len(rule)
 
-    prose_lines = wrap(prose, cols)
+    # Fill the budget with as many WHOLE sentences as fit.
+    #
+    # The first attempt wrapped the lot and then popped lines back to a
+    # sentence end, which could throw away four usable rows to land on a full
+    # stop. Adding sentences one at a time instead uses the space and still
+    # never shows half a sentence -- a description that stops after a complete
+    # thought reads as brevity; one that stops after "the air heavy with
+    # moisture and" reads as a bug.
+    sentences = re.findall(r"[^.!?]+[.!?]+[\s]*|[^.!?]+$", (prose or "").strip())
+    prose_lines: list[str] = []
     trimmed = False
     if budget <= 0:
         # The rule lines alone fill the screen. They still all go: see the
         # module docstring. The prose waits for the player to ask.
-        prose_lines, trimmed = [], bool(prose_lines)
-    elif len(prose_lines) > budget:
-        prose_lines, trimmed = prose_lines[:budget], True
+        trimmed = bool((prose or "").strip())
+    else:
+        kept = ""
+        for sentence in sentences:
+            # Join on a single space: stripping each candidate would otherwise
+            # weld "floor." to "A cold" and read as a typo.
+            candidate = " ".join((kept + " " + sentence).split())
+            lines = wrap(candidate, cols)
+            if len(lines) > budget:
+                trimmed = True
+                break
+            kept, prose_lines = candidate, lines
+        if not prose_lines and sentences:
+            # Even the first sentence overflows the space the rule lines left.
+            # Show NOTHING rather than a fragment: half a sentence on screen
+            # reads as a broken program, and the rule lines above it have
+            # already said what actually happened. The "more" button carries
+            # the prose for anyone who wants it.
+            trimmed = True
 
     return {
         "title": title,

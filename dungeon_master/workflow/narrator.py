@@ -30,10 +30,17 @@ from ..engine import world
 
 _TIMEOUT = float(os.environ.get("DM_LLM_TIMEOUT", "25"))
 
-SYSTEM_PROMPT = """You are the narrator of a terse, dry, slightly menacing dungeon crawl.
+# How much prose to ask for. A 78-column terminal can take 2-4 sentences; a
+# 240x320 panel cannot -- after the title, the HUD, the buttons and the rule
+# lines there can be as little as 90px left, which is five short lines. Asking
+# for prose that cannot be shown just produces text the player never reads, so
+# the length is a property of the display, set by whoever is serving it.
+PROSE_LENGTH = os.environ.get("DM_PROSE_LENGTH", "2-4 sentences")
+
+_SYSTEM_TEMPLATE = """You are the narrator of a terse, dry, slightly menacing dungeon crawl.
 
 Rules you must obey:
-- Write 2-4 sentences. No more. Second person, present tense.
+- Write {prose_length}. No more. Second person, present tense.
 - Describe ONLY what the FACTS and the BEAT give you. Do not invent events, items,
   characters, exits, numbers, health changes, gold, or outcomes. If it is not in the
   facts, it did not happen.
@@ -186,3 +193,7 @@ def narrate_waking(req: dict) -> str:
     )
     out = _complete(prompt)
     return out or fallback
+
+
+# Rendered once, with the configured length.
+SYSTEM_PROMPT = _SYSTEM_TEMPLATE.replace("{prose_length}", PROSE_LENGTH)

@@ -41,7 +41,10 @@ TFT_eSPI tft = TFT_eSPI();
 
 static const int SCR_W = 240, SCR_H = 320;
 static const int ROW_H = 18, TITLE_H = 22, HUD_H = 18;  // font 2 is 16px tall
-static const int BTN_H = 30, BTN_GAP = 3;
+// 26, not 30: four rows of buttons at 30px cost 148px of the 320, leaving
+// eight text rows; at 26 they cost 116 and leave nine. Mirrored in the
+// bridge's layout.py -- if the two disagree the prose gets clipped.
+static const int BTN_H = 26, BTN_GAP = 3;
 
 // ------------------------------------------------------------------ touch ---
 // Touch is driven by src/touch.h -- software SPI, see the note there.
