@@ -12,7 +12,8 @@ dependencies = [
 
 [project.optional-dependencies]
 # The workflow front end narrates with either provider.
-workflow = ["openai==3.26.0", "anthropic>=1.0.0"]
+# pyyaml: history.py parses `diagrid workflow get` YAML to read run history.
+workflow = ["openai==3.26.0", "anthropic>=1.0.0", "pyyaml>=6.0.2"]
 # The agent front end runs the graph as a durable workflow.
 agent = ["diagrid[langgraph]==0.5.3", "langchain-openai>=0.2"]
 # No "all" extra: these two cannot co-install. diagrid[langgraph] pulls in

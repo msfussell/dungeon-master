@@ -137,14 +137,14 @@ name = "anthropic"
 version = "1.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "anyio", marker = "extra == 'extra-14-dungeon-master-agent' or extra == 'extra-14-dungeon-master-workflow'" },
-    { name = "docstring-parser", marker = "extra == 'extra-14-dungeon-master-agent' or extra == 'extra-14-dungeon-master-workflow'" },
-    { name = "httpx2", marker = "extra == 'extra-14-dungeon-master-agent' or extra == 'extra-14-dungeon-master-workflow'" },
-    { name = "jiter", marker = "extra == 'extra-14-dungeon-master-agent' or extra == 'extra-14-dungeon-master-workflow'" },
+    { name = "anyio" },
+    { name = "docstring-parser" },
+    { name = "httpx2" },
+    { name = "jiter" },
     { name = "pydantic", version = "2.13.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-14-dungeon-master-agent'" },
     { name = "pydantic", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-14-dungeon-master-workflow'" },
-    { name = "sniffio", marker = "extra == 'extra-14-dungeon-master-agent' or extra == 'extra-14-dungeon-master-workflow'" },
-    { name = "typing-extensions", marker = "extra == 'extra-14-dungeon-master-agent' or extra == 'extra-14-dungeon-master-workflow'" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0b/ed/e76e50601b7c476bcb9a2a7a4c4dab6f1a9b2c03e3922de8b3ec599ccbc5/anthropic-1.13.0.tar.gz", hash = "sha256:ad11d9bb9adafdfea26113943bcde9973e2a439ebeeda6c89ff3e3d85bb2f5c1", size = 1567362, upload-time = "2026-10-09T15:29:08.803Z" }
 wheels = [
@@ -156,8 +156,8 @@ name = "anyio"
 version = "4.15.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "idna", marker = "extra == 'extra-14-dungeon-master-agent' or extra == 'extra-14-dungeon-master-workflow'" },
-    { name = "typing-extensions", marker = "extra == 'extra-14-dungeon-master-agent' or extra == 'extra-14-dungeon-master-workflow'" },
+    { name = "idna" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a9/d2/f4d173e22df740bc37b1db102b386ba719b66e95b0f0d751f556b387e6d2/anyio-4.15.1.tar.gz", hash = "sha256:9f28306018cbd6d329e64a36d58256edff76dd996fe423bc957326e578b82a94", size = 276966, upload-time = "2026-09-05T10:42:39.44Z" }
 wheels = [
@@ -723,6 +723,7 @@ agent = [
 workflow = [
     { name = "anthropic" },
     { name = "openai", version = "3.26.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -734,6 +735,7 @@ requires-dist = [
     { name = "langchain-openai", marker = "extra == 'agent'", specifier = ">=0.2" },
     { name = "openai", marker = "extra == 'workflow'", specifier = "==3.26.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "pyyaml", marker = "extra == 'workflow'", specifier = ">=6.0.2" },
 ]
 provides-extras = ["workflow", "agent"]
 
@@ -1082,12 +1084,12 @@ name = "httpx2"
 version = "2.13.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "anyio", marker = "(sys_platform != 'emscripten' and extra == 'extra-14-dungeon-master-agent') or (sys_platform != 'emscripten' and extra == 'extra-14-dungeon-master-workflow') or (extra == 'extra-14-dungeon-master-agent' and extra == 'extra-14-dungeon-master-workflow')" },
-    { name = "httpcore2", marker = "(sys_platform != 'emscripten' and extra == 'extra-14-dungeon-master-agent') or (sys_platform != 'emscripten' and extra == 'extra-14-dungeon-master-workflow') or (extra == 'extra-14-dungeon-master-agent' and extra == 'extra-14-dungeon-master-workflow')" },
-    { name = "httpx2-jsfetch", marker = "(python_full_version >= '3.12' and sys_platform == 'emscripten' and extra == 'extra-14-dungeon-master-agent') or (python_full_version >= '3.12' and sys_platform == 'emscripten' and extra == 'extra-14-dungeon-master-workflow') or (python_full_version < '3.12' and extra == 'extra-14-dungeon-master-agent' and extra == 'extra-14-dungeon-master-workflow') or (sys_platform != 'emscripten' and extra == 'extra-14-dungeon-master-agent' and extra == 'extra-14-dungeon-master-workflow')" },
-    { name = "idna", marker = "extra == 'extra-14-dungeon-master-agent' or extra == 'extra-14-dungeon-master-workflow'" },
-    { name = "truststore", marker = "(sys_platform != 'emscripten' and extra == 'extra-14-dungeon-master-agent') or (sys_platform != 'emscripten' and extra == 'extra-14-dungeon-master-workflow') or (extra == 'extra-14-dungeon-master-agent' and extra == 'extra-14-dungeon-master-workflow')" },
-    { name = "typing-extensions", marker = "(python_full_version < '3.13' and extra == 'extra-14-dungeon-master-agent') or (python_full_version < '3.13' and extra == 'extra-14-dungeon-master-workflow') or (extra == 'extra-14-dungeon-master-agent' and extra == 'extra-14-dungeon-master-workflow')" },
+    { name = "anyio", marker = "sys_platform != 'emscripten'" },
+    { name = "httpcore2", marker = "sys_platform != 'emscripten'" },
+    { name = "httpx2-jsfetch", marker = "python_full_version >= '3.12' and sys_platform == 'emscripten'" },
+    { name = "idna" },
+    { name = "truststore", marker = "sys_platform != 'emscripten'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d5/44/474bef2a0e9d90f1715d32cb98b0738695ca17ba324095fb2497ed7fbd59/httpx2-2.13.1.tar.gz", hash = "sha256:e48744a19e3af5ee48313d0ce5fe941d5422fae5705ea922a4aabf94d7800dfa", size = 100405, upload-time = "2026-09-23T07:47:23.052Z" }
 wheels = [
@@ -3006,7 +3008,7 @@ name = "typing-inspection"
 version = "0.4.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "extra == 'extra-14-dungeon-master-agent' or extra == 'extra-14-dungeon-master-workflow'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a3/26/b09b8010994eccc3c09092e6b34058f36a460eea2d4c3e8b910c695975a0/typing_inspection-0.4.4.tar.gz", hash = "sha256:547274fa6b0a561ccf549cc9524b999a578e737d015d8709d021f9d0d13bea47", size = 76928, upload-time = "2026-08-12T12:37:25.997Z" }
 wheels = [
