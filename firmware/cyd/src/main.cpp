@@ -22,9 +22,9 @@
 #include <SPI.h>
 #include <TFT_eSPI.h>
 #include <WiFi.h>
-#include <XPT2046_Touchscreen.h>
 
 #include "secrets.h"
+#include "touch.h"
 
 // ---------------------------------------------------------------- display ---
 TFT_eSPI tft = TFT_eSPI();
@@ -44,13 +44,17 @@ static const int ROW_H = 18, TITLE_H = 22, HUD_H = 18;
 static const int BTN_H = 30, BTN_GAP = 3;
 
 // ------------------------------------------------------------------ touch ---
-SPIClass touchSPI(HSPI);
-XPT2046_Touchscreen ts(CYD_TOUCH_CS, CYD_TOUCH_IRQ);
+// Touch is driven by src/touch.h -- software SPI, see the note there.
 
 // Nominal calibration. The raw XPT2046 range varies per unit, so rung 2 prints
 // the raw values: read the corners off the serial monitor and correct these.
-static int TS_MINX = 240, TS_MAXX = 3800;
-static int TS_MINY = 200, TS_MAXY = 3800;
+// Measured on this board by the guided calibration below, then baked in.
+// X is reversed -- screen X rises as the raw value falls -- which is why MINX
+// is the larger number. Arduino's map() interpolates a reversed range fine, so
+// the inversion needs no special case.
+static int TS_MINX = 1932, TS_MAXX = 209;
+static int TS_MINY = 101,  TS_MAXY = 1886;
+static bool TS_SWAP = false;                 // screen X comes from raw X here
 
 struct Btn { String k, label; int x, y, w, h; };
 static Btn  buttons[10];
@@ -219,32 +223,92 @@ void setup() {
   banner("dungeon-master  self test");
   probe("display", true, "ILI9341");
 
-  touchSPI.begin(CYD_TOUCH_CLK, CYD_TOUCH_MISO, CYD_TOUCH_MOSI, CYD_TOUCH_CS);
-  bool tok = ts.begin(touchSPI);
-  ts.setRotation(0);
-  probe("touch", tok, "tap to show xy");
+  touchInit();
+  uint16_t tz = 0;
+  touchRead(nullptr, nullptr, &tz);
+  probe("touch", true, "bit-bang");
 
-  // A window to prod the screen in. The raw numbers go to serial and are what
-  // the calibration constants above should be set from: the XPT2046 range
-  // varies per unit, so the defaults are nominal until someone touches glass.
-  // Ends early once it has seen four distinct touches, so a calibrated board
-  // does not sit here on every boot.
-  line(probeRow, "touch 4 corners ->", C_TITLE);
-  unsigned long until = millis() + 30000;
-  int seen = 0;
-  while (millis() < until && seen < 4) {
-    if (ts.touched()) {
-      TS_Point p = ts.getPoint();
-      char buf[48];
-      snprintf(buf, sizeof buf, "raw x=%4d y=%4d z=%3d", p.x, p.y, p.z);
-      line(probeRow, buf, C_BTN_TXT);
-      Serial.printf("[touch] %s\n", buf);
-      seen++;
-      while (ts.touched()) delay(20);   // one reading per press
+  // Calibration is opt-in now that this board's numbers are baked in above:
+  // hold a finger on the screen through reset to redo it. Otherwise the board
+  // goes straight to the game, which is what you want every other time.
+  bool wantCal = touchRead(nullptr, nullptr, nullptr);
+  if (wantCal) {
+
+  // GUIDED CALIBRATION. Three targets: top-left, top-right, bottom-left.
+  // TL->TR moves in screen X only, TL->BL in screen Y only, so whichever raw
+  // axis changes across each pair IS that screen axis -- which settles both
+  // the swap and the direction. Tapping four corners cannot: every corner pair
+  // is a diagonal, and a diagonal changes both axes at once.
+  struct Target { int x, y; const char *name; };
+  Target targets[3] = {{20, 20, "top-left"}, {SCR_W - 20, 20, "top-right"},
+                       {20, SCR_H - 20, "bottom-left"}};
+  uint16_t rawX[3] = {0, 0, 0}, rawY[3] = {0, 0, 0};
+  bool calOk = true;
+
+  for (int i = 0; i < 3; i++) {
+    tft.fillScreen(C_BG);
+    banner("calibration");
+    tft.setTextColor(C_PROSE, C_BG);
+    tft.drawString("tap the circle", 6, 30, 2);
+    tft.drawString(targets[i].name, 6, 48, 2);
+    tft.drawCircle(targets[i].x, targets[i].y, 10, C_TITLE);
+    tft.drawCircle(targets[i].x, targets[i].y, 3, C_TITLE);
+
+    unsigned long until = millis() + 25000;
+    bool got = false;
+    while (millis() < until && !got) {
+      uint16_t x, y, z;
+      if (touchRead(&x, &y, &z)) {
+        rawX[i] = x; rawY[i] = y; got = true;
+        Serial.printf("[cal] %-11s raw x=%4u y=%4u\n", targets[i].name, x, y);
+        tft.fillCircle(targets[i].x, targets[i].y, 6, C_OK);
+        while (touchRead(nullptr, nullptr, nullptr)) delay(20);
+        delay(250);
+      }
+      delay(20);
     }
-    delay(30);
+    if (!got) { calOk = false; break; }
   }
-  probeRow++;
+
+  tft.fillScreen(C_BG);
+  probeRow = 1;
+  banner("dungeon-master  self test");
+  probe("display", true, "ILI9341");
+  probe("touch", true, "bit-bang");
+
+  if (calOk) {
+    // Which raw axis tracked the horizontal move?
+    int dHorizX = abs((int)rawX[1] - (int)rawX[0]);
+    int dHorizY = abs((int)rawY[1] - (int)rawY[0]);
+    TS_SWAP = dHorizY > dHorizX;
+
+    // Extrapolate each axis from its two samples out to the screen edges, so
+    // the mapping covers 0..SCR rather than only the tapped inset.
+    int sx0 = TS_SWAP ? rawY[0] : rawX[0];      // at screen x = 20
+    int sx1 = TS_SWAP ? rawY[1] : rawX[1];      // at screen x = SCR_W - 20
+    int sy0 = TS_SWAP ? rawX[0] : rawY[0];      // at screen y = 20
+    int sy1 = TS_SWAP ? rawX[2] : rawY[2];      // at screen y = SCR_H - 20
+
+    float px = (float)(sx1 - sx0) / (float)(SCR_W - 40);
+    float py = (float)(sy1 - sy0) / (float)(SCR_H - 40);
+    TS_MINX = (int)(sx0 - px * 20);
+    TS_MAXX = (int)(sx1 + px * 20);
+    TS_MINY = (int)(sy0 - py * 20);
+    TS_MAXY = (int)(sy1 + py * 20);
+
+    Serial.printf("[cal] swap=%d  X %d..%d  Y %d..%d\n",
+                  TS_SWAP, TS_MINX, TS_MAXX, TS_MINY, TS_MAXY);
+    Serial.println("[cal] ^ bake these into main.cpp to skip calibration");
+    char buf[48];
+    snprintf(buf, sizeof buf, "swap=%d x %d..%d", TS_SWAP, TS_MINX, TS_MAXX);
+    probe("calib", true, buf);
+  } else {
+    probe("calib", false, "timed out, using defaults");
+  }
+
+  } else {
+    probe("calib", true, "baked in");
+  }
 
   probe("wifi", connectWifi(), WiFi.localIP().toString().c_str());
   if (WiFi.status() != WL_CONNECTED) {
@@ -261,19 +325,21 @@ void setup() {
   }
 
   line(probeRow + 1, "tap to enter the dungeon", C_TITLE);
-  while (!ts.touched()) delay(50);
+  while (!touchRead(nullptr, nullptr, nullptr)) delay(50);
   spinner("opening the dungeon...");
   fetchAndDraw("/scene?slot=" + slot);
 }
 
 // ------------------------------------------------------------------- loop ---
 void loop() {
-  if (!ts.touched()) { delay(30); return; }
+  uint16_t rx, ry, rz;
+  if (!touchRead(&rx, &ry, &rz)) { delay(30); return; }
 
-  TS_Point p = ts.getPoint();
-  int x = map(p.x, TS_MINX, TS_MAXX, 0, SCR_W);
-  int y = map(p.y, TS_MINY, TS_MAXY, 0, SCR_H);
-  Serial.printf("[tap] raw=%d,%d -> %d,%d\n", p.x, p.y, x, y);
+  int x = map(TS_SWAP ? ry : rx, TS_MINX, TS_MAXX, 0, SCR_W);
+  int y = map(TS_SWAP ? rx : ry, TS_MINY, TS_MAXY, 0, SCR_H);
+  x = constrain(x, 0, SCR_W - 1);
+  y = constrain(y, 0, SCR_H - 1);
+  Serial.printf("[tap] raw=%u,%u -> %d,%d\n", rx, ry, x, y);
 
   for (int i = 0; i < nButtons; i++) {
     Btn &b = buttons[i];
@@ -286,7 +352,7 @@ void loop() {
       String payload;
       serializeJson(req, payload);
       fetchAndDraw("/command", payload);
-      while (ts.touched()) delay(20);   // wait for release, no double-fire
+      while (touchRead(nullptr, nullptr, nullptr)) delay(20);  // await release
       return;
     }
   }
