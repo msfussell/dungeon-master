@@ -26,6 +26,10 @@
 #include "secrets.h"
 #include "touch.h"
 
+// The BOOT button. Held through a reset it enters the bootloader, but a press
+// while running is just a button -- the only one this board has.
+#define PIN_BOOT 0
+
 // ---------------------------------------------------------------- display ---
 TFT_eSPI tft = TFT_eSPI();
 
@@ -124,10 +128,87 @@ static bool httpPost(const String &path, const String &payload, String &body) {
 }
 
 // ------------------------------------------------------------- the screen ---
+// The map, drawn from the bridge's fog-of-war cells. Only rooms the player has
+// stood in carry a name; an unexplored neighbour is a "?"; the vault is simply
+// absent until the door opens, so the map cannot give the secret away.
+static void drawMap(JsonDocument &doc) {
+  tft.fillScreen(C_BG);
+  banner("the map");
+
+  JsonObject m = doc["map"].as<JsonObject>();
+  int x0 = m["x0"] | 0, y0 = m["y0"] | 0;
+  int w = m["w"] | 1, h = m["h"] | 1;
+
+  const int top = TITLE_H + 6;
+  const int bottom = SCR_H - HUD_H - (BTN_H + BTN_GAP) - 4;
+  const int availW = SCR_W - 8, availH = bottom - top;
+  int cw = availW / w, ch = availH / h;
+  if (cw > 76) cw = 76;                 // keep cells from sprawling
+  if (ch > 60) ch = 60;
+  int ox = (SCR_W - cw * w) / 2;
+  int oy = top + (availH - ch * h) / 2;
+
+  for (JsonVariant v : m["cells"].as<JsonArray>()) {
+    int cx = v["x"] | 0, cy = v["y"] | 0;
+    bool seen = v["seen"] | false, here = v["here"] | false;
+    // y grows north in the world, down the screen here.
+    int px = ox + (cx - x0) * cw;
+    int py = oy + ((y0 + h - 1) - cy) * ch;
+
+    tft.fillRoundRect(px + 2, py + 2, cw - 4, ch - 4, 3,
+                      seen ? C_BTN : C_BG);
+    tft.drawRoundRect(px + 2, py + 2, cw - 4, ch - 4, 3,
+                      here ? C_TITLE : (seen ? C_BTN_TXT : C_PROSE));
+
+    String label = v["label"].as<String>();
+    if (!seen) {
+      tft.setTextColor(C_PROSE, C_BG);
+      tft.drawString("?", px + cw / 2 - 3, py + ch / 2 - 8, 2);
+      continue;
+    }
+    // Two lines if the name does not fit on one.
+    tft.setTextColor(here ? C_TITLE : C_BTN_TXT, C_BTN);
+    int maxw = cw - 10;
+    if (tft.textWidth(label, 2) <= maxw) {
+      tft.drawString(label, px + 5, py + ch / 2 - 8, 2);
+    } else {
+      int cut = label.length();
+      while (cut > 1 && tft.textWidth(label.substring(0, cut), 2) > maxw) cut--;
+      int sp = label.lastIndexOf(' ', cut);
+      if (sp < 1) sp = cut;
+      tft.drawString(label.substring(0, sp), px + 5, py + ch / 2 - 16, 2);
+      String rest = label.substring(sp + 1);
+      while (rest.length() > 1 && tft.textWidth(rest, 2) > maxw)
+        rest.remove(rest.length() - 1);
+      tft.drawString(rest, px + 5, py + ch / 2, 2);
+    }
+    if (here) {
+      tft.fillCircle(px + cw - 10, py + 10, 3, C_TITLE);
+    }
+  }
+
+  // The one button, full width, so "back" is unmissable.
+  nButtons = 0;
+  int by = SCR_H - HUD_H - BTN_H - BTN_GAP;
+  tft.fillRoundRect(BTN_GAP, by, SCR_W - 2 * BTN_GAP, BTN_H, 4, C_BTN);
+  tft.setTextColor(C_BTN_TXT, C_BTN);
+  tft.drawString("back", BTN_GAP + 6, by + 5, 2);
+  buttons[nButtons++] = {"back", "back", BTN_GAP, by, SCR_W - 2 * BTN_GAP, BTN_H};
+
+  tft.fillRect(0, SCR_H - HUD_H, SCR_W, HUD_H, C_BG);
+  tft.setTextColor(C_HUD, C_BG);
+  tft.drawString(doc["hud"] | "", 6, SCR_H - HUD_H + 2, 2);
+}
+
 static void drawScene(JsonDocument &doc) {
+  if (doc["map"].is<JsonObject>()) { drawMap(doc); return; }
   tft.fillScreen(C_BG);
 
   banner(doc["title"] | "");
+  // The title bar is not a button, so it is free real estate -- and tapping it
+  // opens the map. Label it, or the gesture is a secret rather than a feature.
+  tft.setTextColor(C_BTN_TXT, C_BG);
+  tft.drawString("[map]", SCR_W - 40, 3, 2);
 
   // Buttons are bottom-anchored, so the text area is whatever is left. The
   // bridge already trimmed the prose to fit, but clip anyway: never let prose
@@ -266,6 +347,10 @@ void setup() {
   banner("dungeon-master  self test");
   probe("display", true, "ILI9341");
 
+  pinMode(PIN_BOOT, INPUT_PULLUP);
+  Serial.printf("[boot] GPIO0 reads %d (1 = released; press it to see 0)\n",
+                digitalRead(PIN_BOOT));
+
   touchInit();
   uint16_t tz = 0;
   touchRead(nullptr, nullptr, &tz);
@@ -375,6 +460,18 @@ void setup() {
 
 // ------------------------------------------------------------------- loop ---
 void loop() {
+  // The BOOT button is the board's only physical button, and opens the map
+  // too, for anyone who would rather press a thing than tap glass.
+  if (digitalRead(PIN_BOOT) == LOW) {
+    spinner("the map...");
+    JsonDocument req;
+    req["slot"] = slot; req["k"] = "map";
+    String payload; serializeJson(req, payload);
+    fetchAndDraw("/command", payload);
+    while (digitalRead(PIN_BOOT) == LOW) delay(20);
+    return;
+  }
+
   uint16_t rx, ry, rz;
   if (!touchRead(&rx, &ry, &rz)) { delay(30); return; }
 
@@ -383,6 +480,18 @@ void loop() {
   x = constrain(x, 0, SCR_W - 1);
   y = constrain(y, 0, SCR_H - 1);
   Serial.printf("[tap] raw=%u,%u -> %d,%d\n", rx, ry, x, y);
+
+  // A tap on the title bar asks for the map. Checked before the buttons,
+  // since no button is drawn up there.
+  if (y < TITLE_H) {
+    spinner("the map...");
+    JsonDocument req;
+    req["slot"] = slot; req["k"] = "map";
+    String payload; serializeJson(req, payload);
+    fetchAndDraw("/command", payload);
+    while (touchRead(nullptr, nullptr, nullptr)) delay(20);
+    return;
+  }
 
   for (int i = 0; i < nButtons; i++) {
     Btn &b = buttons[i];

@@ -28,7 +28,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from ..engine import engine
+from ..engine import engine, world
 from . import layout
 
 logging.basicConfig(level=logging.INFO)
@@ -145,6 +145,67 @@ def _screen(slot: str, scene: dict, ended: bool = False) -> dict:
     return out
 
 
+def _map_screen(slot: str, scene: dict) -> dict:
+    """A fog-of-war map, built from where the player has actually been.
+
+    Three rules, and they are the game's rules rather than drawing decisions:
+
+      * only rooms you have stood in get a name. The game already refuses to
+        name an exit you have not walked, and a map that ignored that would
+        hand over the layout and make the lodestone pointless.
+      * an unexplored room that adjoins somewhere you HAVE been shows as "?".
+        That is the same information the exit list already gives you, drawn in
+        two dimensions instead of one.
+      * the vault does not appear at all until the door is open. The whole
+        point of the secret is that nothing readable gives it away, and a box
+        on a map is readable.
+    """
+    visited = set(scene.get("visited") or [])
+    here = scene.get("room")
+    door_open = bool(scene.get("door_open"))
+
+    shown: dict[tuple[int, int], dict] = {}
+    for rid in visited:
+        if rid not in world.ROOMS:
+            continue
+        x, y = world.ROOMS[rid]["coord"]
+        shown[(x, y)] = {"x": x, "y": y, "label": _short(world.ROOMS[rid]["title"]),
+                         "seen": True, "here": rid == here}
+        # Its neighbours become "?" boxes, unless they are still secret.
+        for direction, dest in world.exits_of(rid).items():
+            if dest in visited:
+                continue
+            if dest == world.VAULT_ROOM and not door_open:
+                continue            # the secret stays secret
+            dx, dy = world.ROOMS[dest]["coord"]
+            shown.setdefault((dx, dy), {"x": dx, "y": dy, "label": "?",
+                                        "seen": False, "here": False})
+
+    if not shown:
+        shown[(0, 0)] = {"x": 0, "y": 0, "label": "?", "seen": False, "here": True}
+
+    xs = [c[0] for c in shown]
+    ys = [c[1] for c in shown]
+    return {
+        "title": "the map",
+        "rule": [], "prose": [], "more": False,
+        "map": {"x0": min(xs), "y0": min(ys),
+                "w": max(xs) - min(xs) + 1, "h": max(ys) - min(ys) + 1,
+                "cells": list(shown.values())},
+        "buttons": [{"k": "back", "label": "back", "dir": True}],
+        "seq": -2,
+        "hud": _compact_hud(scene.get("hud") or ""),
+        "ended": False,
+        "slot": slot,
+    }
+
+
+def _short(title: str) -> str:
+    """Room names, minus the article, for a 72px cell."""
+    t = title[4:] if title.lower().startswith("the ") else title
+    return t
+
+
 def _ensure_run(slot: str) -> dict:
     """Resume this slot's adventure, or begin one. One slot, one save."""
     from ..workflow import cli as wcli
@@ -177,6 +238,15 @@ def _do_command(slot: str, key: str) -> dict:
                 "hud": "", "ended": False, "slot": slot}
     if key == "back":
         return _ensure_run(slot)
+    if key == "map":
+        # A free action, like `look`: no turn, no event raised, so checking
+        # where you are never costs 2 health to the lodestone.
+        from ..workflow import cli as wcli
+        state = _client.get_workflow_state(slot)
+        scene = wcli._decode_status(state.serialized_custom_status) if state else None
+        if not scene:
+            return {"error": "no adventure to map", "slot": slot}
+        return _map_screen(slot, scene)
 
     command = DIRECTIONS.get(key) or ("look" if key == "look" else key)
 

@@ -74,6 +74,11 @@ def _scene(ctx, state, seq, narration, verbatim, recap=None, notice=None,
         "health": state["health"],
         "gold": state["gold"],
         "inventory": list(state["inventory"]),
+        # Which rooms the player has stood in. The map on the device is fog of
+        # war and needs this; a map that showed the whole grid would hand over
+        # the layout and undo both the exploration and the lodestone, which is
+        # only worth carrying because it is the one thing that knows the way.
+        "visited": list(state["visited"]),
         "choices_made": list(state["taken"]),
         "cheated_merchant": state["cheated_merchant"],
         "door_open": state["door_open"],
