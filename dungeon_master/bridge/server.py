@@ -134,6 +134,17 @@ def _screen(slot: str, scene: dict, ended: bool = False) -> dict:
     _full_prose[slot] = layout.wrap(prose)
     out = layout.compose(scene.get("title") or "", scene.get("verbatim") or [],
                          prose, buttons)
+
+    # The one illustration in the game, and only where it is the payoff: the
+    # vault. Asking for it anywhere else would make it wallpaper, and the
+    # dragon is worth more as the thing you finally see. The device draws it
+    # from primitives, so this costs one short string.
+    if scene.get("room") == world.VAULT_ROOM:
+        out["art"] = "vault"
+        # The picture replaces the paragraph that described it; the words are
+        # still a tap away on "more".
+        out["prose"] = []
+        out["more"] = bool(_full_prose[slot])
     # A "more" button, because the prose that did not fit is otherwise
     # unreachable -- an ellipsis the player cannot tap is just a tease.
     if out.get("more") and not ended:

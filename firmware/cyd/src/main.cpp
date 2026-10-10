@@ -24,6 +24,7 @@
 #include <WiFi.h>
 
 #include "secrets.h"
+#include "art.h"
 #include "touch.h"
 
 // The BOOT button. Held through a reset it enters the bootloader, but a press
@@ -229,11 +230,21 @@ static void drawScene(JsonDocument &doc) {
     tft.drawString(v.as<const char *>(), 6, y, 2);
     y += ROW_H;
   }
-  tft.setTextColor(C_PROSE, C_BG);
-  for (JsonVariant v : doc["prose"].as<JsonArray>()) {
-    if (y + ROW_H > btnTop) break;
-    tft.drawString(v.as<const char *>(), 6, y, 2);
-    y += ROW_H;
+  const char *art = doc["art"] | "";
+  if (art[0]) {
+    // The picture replaces the prose rather than squeezing in beside it: the
+    // dragon says what the paragraph would have said, and the rule lines above
+    // (including the reward line) still print in full.
+    int h = btnTop - y - 2;
+    if (h > 40) artDragonFit(tft, 0, y, SCR_W, h);
+    y = btnTop;
+  } else {
+    tft.setTextColor(C_PROSE, C_BG);
+    for (JsonVariant v : doc["prose"].as<JsonArray>()) {
+      if (y + ROW_H > btnTop) break;
+      tft.drawString(v.as<const char *>(), 6, y, 2);
+      y += ROW_H;
+    }
   }
 
   haveMore = doc["more"] | false;
