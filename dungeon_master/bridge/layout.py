@@ -22,11 +22,20 @@ from __future__ import annotations
 
 import textwrap
 
-# Measured against the panel, not guessed: 240px wide at the font we draw.
-COLS = 24
-ROWS = 16
+# MEASURED on the panel, not guessed. TFT_eSPI font 2 on this board reports
+# height=16 and a real sentence at 183px for 29 characters -- about 6.3px per
+# character. With a 6px margin each side that is 228px of usable width, so:
+#
+#   228 / 6.3 ~= 36 characters
+#
+# Wrapping at 24 (the first guess) wasted a third of the width AND produced so
+# many extra lines that the bottom of the prose was clipped. 34 is 36 with a
+# little headroom for a capital-heavy line, since the font is proportional
+# ("M" is 10px, "i" is 4px).
+COLS = 34
+ROWS = 15          # 320px / 18px rows, taking a 16px font plus leading
 
-# Rows the chrome always costs: title, a rule above the buttons, the HUD.
+# Rows the chrome always costs: the title bar and the HUD line.
 CHROME_ROWS = 3
 
 
@@ -38,8 +47,16 @@ def wrap(text: str, cols: int = COLS) -> list[str]:
 
 
 def button_rows(buttons: list[dict]) -> int:
-    """Buttons are drawn two per row, so eight buttons cost four rows."""
-    return (len(buttons) + 1) // 2
+    """How many rows a button set costs.
+
+    Directions are short ("N  Hall of Teeth") and go two per row; numbered
+    choices are long ("bed down at the campfire and rest") and get a full row
+    each. Mixing the two is what lets the screen use its whole width instead of
+    truncating every choice to half of it.
+    """
+    wide = sum(1 for b in buttons if b.get("wide"))
+    narrow = len(buttons) - wide
+    return wide + (narrow + 1) // 2
 
 
 def compose(title: str, rule_lines: list[str], prose: str,

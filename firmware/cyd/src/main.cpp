@@ -40,7 +40,7 @@ TFT_eSPI tft = TFT_eSPI();
 #define C_FAIL    TFT_RED
 
 static const int SCR_W = 240, SCR_H = 320;
-static const int ROW_H = 18, TITLE_H = 22, HUD_H = 18;
+static const int ROW_H = 18, TITLE_H = 22, HUD_H = 18;  // font 2 is 16px tall
 static const int BTN_H = 30, BTN_GAP = 3;
 
 // ------------------------------------------------------------------ touch ---
@@ -131,7 +131,11 @@ static void drawScene(JsonDocument &doc) {
   // overwrite a rule line or a button.
   JsonArray btns = doc["buttons"].as<JsonArray>();
   nButtons = 0;
-  int rows = (btns.size() + 1) / 2;
+  // Count rows the same way the bridge does: wide buttons one per row, narrow
+  // ones two. Disagreeing with the bridge here is what clips the prose.
+  int nWide = 0, nNarrow = 0;
+  for (JsonVariant v : btns) ((v["wide"] | false) ? nWide : nNarrow)++;
+  int rows = nWide + (nNarrow + 1) / 2;
   int btnTop = SCR_H - HUD_H - rows * (BTN_H + BTN_GAP);
 
   int y = TITLE_H + 4;
@@ -154,28 +158,56 @@ static void drawScene(JsonDocument &doc) {
     tft.drawString("...", 6, y, 2);
   }
 
-  // Two per row. The count changes every scene -- a choice already taken
+  // Two widths. Directions are short and go two per row; numbered choices are
+  // sentences and get a full row each, which is what finally uses the whole
+  // 240px instead of truncating every choice to half of it.
+  //
+  // The count and the mix change every scene -- a choice already taken
   // disappears -- so this is laid out fresh each time, never a fixed grid.
-  int i = 0;
+  int by = btnTop;
+  int pendingNarrowX = -1;          // a half-width slot waiting for a partner
+  nButtons = 0;
   for (JsonVariant v : btns) {
-    int col = i % 2, row = i / 2;
-    int w = (SCR_W - 3 * BTN_GAP) / 2;
-    int x = BTN_GAP + col * (w + BTN_GAP);
-    int by = btnTop + row * (BTN_H + BTN_GAP);
+    bool wide = v["wide"] | false;
+    int x, w;
+    if (wide) {
+      if (pendingNarrowX >= 0) { by += BTN_H + BTN_GAP; pendingNarrowX = -1; }
+      x = BTN_GAP;
+      w = SCR_W - 2 * BTN_GAP;
+    } else if (pendingNarrowX < 0) {
+      w = (SCR_W - 3 * BTN_GAP) / 2;
+      x = BTN_GAP;
+      pendingNarrowX = x + w + BTN_GAP;
+    } else {
+      w = (SCR_W - 3 * BTN_GAP) / 2;
+      x = pendingNarrowX;
+      pendingNarrowX = -1;
+    }
 
     tft.fillRoundRect(x, by, w, BTN_H, 4, C_BTN);
-    tft.setTextColor(C_BTN_TXT, C_BTN);
     String label = v["label"].as<String>();
-    // Trim to the button, keeping the start: the first words identify it.
-    while (label.length() > 1 && tft.textWidth(label, 2) > w - 8)
+
+    // "N  Hall of Teeth": draw the direction letter in the title colour so the
+    // way out is readable at a glance. The destination name alone never said
+    // which direction it was.
+    int tx = x + 5;
+    if (!wide && label.length() > 3 && label[1] == ' ' && label[2] == ' ' &&
+        isupper(label[0])) {
+      tft.setTextColor(C_TITLE, C_BTN);
+      tft.drawString(label.substring(0, 1), tx, by + 7, 2);
+      tx += tft.textWidth("N  ", 2);
+      label = label.substring(3);
+    }
+    tft.setTextColor(C_BTN_TXT, C_BTN);
+    while (label.length() > 1 && tft.textWidth(label, 2) > (x + w - 4) - tx)
       label.remove(label.length() - 1);
-    tft.drawString(label, x + 4, by + 7, 2);
+    tft.drawString(label, tx, by + 7, 2);
 
     if (nButtons < 10) {
       buttons[nButtons++] = {v["k"].as<String>(), v["label"].as<String>(),
                              x, by, w, BTN_H};
     }
-    i++;
+    if (wide || pendingNarrowX < 0) by += BTN_H + BTN_GAP;
   }
 
   tft.fillRect(0, SCR_H - HUD_H, SCR_W, HUD_H, C_BG);
@@ -220,6 +252,14 @@ void setup() {
   tft.setRotation(0);                  // portrait, 240x320
   tft.fillScreen(C_BG);
 
+  // Report real font metrics once, so the bridge wraps to the width this
+  // panel actually has instead of an assumed column count. Guessed numbers are
+  // what cut text off and left the right-hand side empty.
+  Serial.printf("[font] f2 height=%d  \"M\"=%d  \"i\"=%d  24x\"n\"=%d  screen=%dx%d\n",
+                tft.fontHeight(2), tft.textWidth("M", 2), tft.textWidth("i", 2),
+                tft.textWidth("nnnnnnnnnnnnnnnnnnnnnnnn", 2), SCR_W, SCR_H);
+  Serial.printf("[font] sample sentence width=%d for %d chars\n",
+                tft.textWidth("the lodestone drinks 2 health", 2), 29);
   banner("dungeon-master  self test");
   probe("display", true, "ILI9341");
 

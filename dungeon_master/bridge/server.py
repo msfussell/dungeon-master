@@ -77,28 +77,62 @@ def _exit_buttons(scene: dict) -> list[dict]:
         m = re.match(r"\s*(north|south|east|west)\s*[—-]\s*(.+)", str(line))
         if not m:
             continue
-        out.append({"k": m.group(1)[0], "label": m.group(2).strip()})
+        where = m.group(2).strip()
+        # Drop a leading "The ": four characters of nothing, on a button that
+        # has about eighteen.
+        if where.lower().startswith("the "):
+            where = where[4:]
+        letter = m.group(1)[0].upper()
+        # The letter leads, so the direction is readable at a glance -- the
+        # destination name alone does not say which way it is.
+        out.append({"k": letter.lower(), "label": f"{letter}  {where}",
+                    "dir": True})
     return out
 
 
 def _menu_buttons(scene: dict) -> list[dict]:
     """Numbered choices. The count changes per scene, because a choice already
     taken disappears -- so the device must lay these out dynamically."""
-    return [{"k": str(i), "label": label}
+    # wide: a full row each. These labels are sentences.
+    return [{"k": str(i), "label": label, "wide": True}
             for i, label in enumerate(scene.get("menu") or [], 1)]
+
+
+def _compact_hud(hud: str) -> str:
+    """Squeeze the terminal's HUD onto 240 pixels.
+
+    "health 11/30   gold 17   carrying: ashen lodestone" is about 50
+    characters, which at the measured 6.3px per character is 315px on a 240px
+    panel -- so the terminal's own line is cut off at "carrying: a". The same
+    facts fit in 30.
+    """
+    m = re.search(r"health\s+(\d+)/(\d+)", hud or "")
+    hp = f"{m.group(1)}/{m.group(2)}hp" if m else ""
+    g = re.search(r"gold\s+(\d+)", hud or "")
+    gold = f"{g.group(1)}g" if g else ""
+    c = re.search(r"carrying:\s*(.+?)\s*$", hud or "")
+    carry = (c.group(1) if c else "").strip()
+    if carry == "nothing":
+        carry = ""
+    return "  ".join(x for x in (hp, gold, carry) if x)
 
 
 def _screen(slot: str, scene: dict, ended: bool = False) -> dict:
     buttons = _exit_buttons(scene) + _menu_buttons(scene)
     if not ended:
-        buttons.append({"k": "look", "label": "look"})
+        buttons.append({"k": "look", "label": "look", "dir": True})
     prose = scene.get("prose") or ""
     _full_prose[slot] = layout.wrap(prose)
     out = layout.compose(scene.get("title") or "", scene.get("verbatim") or [],
                          prose, buttons)
+    # A "more" button, because the prose that did not fit is otherwise
+    # unreachable -- an ellipsis the player cannot tap is just a tease.
+    if out.get("more") and not ended:
+        buttons.append({"k": "more", "label": "more...", "dir": True})
+        out["buttons"] = buttons
     out.update({
         "seq": scene.get("seq", 0),
-        "hud": scene.get("hud") or "",
+        "hud": _compact_hud(scene.get("hud") or ""),
         "ended": bool(ended or scene.get("ended")),
         "slot": slot,
     })
@@ -133,7 +167,7 @@ def _do_command(slot: str, key: str) -> dict:
         # Not a turn: hand back the prose the screen could not fit.
         lines = _full_prose.get(slot) or []
         return {"title": "", "rule": [], "prose": lines, "more": False,
-                "buttons": [{"k": "back", "label": "back"}], "seq": -1,
+                "buttons": [{"k": "back", "label": "back", "dir": True}], "seq": -1,
                 "hud": "", "ended": False, "slot": slot}
     if key == "back":
         return _ensure_run(slot)
