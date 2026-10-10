@@ -1,0 +1,47 @@
+Build "dungeon-master": a durable text adventure as a Dapr Workflow on Diagrid
+Catalyst, in Python, via the Catalyst MCP tools. Ask which project; never make one.
+
+THE SAVE FILE IS THE WORKFLOW. No database, no file on disk. One long-lived run
+holds it: health, gold, inventory and every choice live in its own history. It
+parks on wait_for_external_event between my moves, so killing the app leaves it
+on that line, not rolled back to a checkpoint. The worker only dials out - no
+inbound port, nothing listening.
+
+DETERMINISM. The orchestrator decides; anything with a clock, a die, a network
+call or an LLM is an activity. Activities run at least once, so seed every RNG
+from the workflow id plus turn - an unseeded retry rewrites what happened. Narrate inside an activity so the text is recorded and a
+replay re-reads it rather than paying twice.
+
+GAME. Rooms, n/s/e/w, max 3 choices a scene. A talking door, a cursed item, a
+merchant who remembers being cheated. The cursed item is also the compass - how
+far to what it wants, which way - and costs health per turn. A taken choice
+disappears; a merely useless one stays and says why. Exits name where they go
+once walked, else "unexplored". Highlight interactable nouns. Vary repeated
+flavour. Spinner while the model writes. Open with one line saying what I seek.
+Keep the SDK logs off screen: an INFO line mid-sentence looks like a bug.
+
+VERBATIM. Any line stating a rule or instruction prints exactly as written and
+never reaches the narrator. Enforce it structurally - a type, not a flag someone
+must remember - or the next rule line added leaks. A narrator handed "you have
+not got 5 gold" describes the purchase happening.
+
+SECRET. The door hides a vault and opens when I offer it the cursed item. Put
+that offer on the menu whenever I carry it and stand where it works, but no
+string gives the door a motive. Opening it records a workflow step named
+secret_vault_found, shows a dragon guarding a glowing durable scroll, and
+prints "Show this run to the Diagrid booth to claim your reward."
+
+DURABLE REST. A campfire rest ending in a random event that wakes me: a real
+create_timer, never a sleep, in seconds, default 120. The process may be dead
+for all of it.
+
+RESUME. "save and quit" stops the app; starting it again picks up exactly where
+I left off, recapping the moment in one dramatic sentence. At the ending show my
+adventure as a timeline read back from run history, plus the console link. Either LLM key from an env var, or none - with no key it narrates itself in
+written prose and stays fully playable.
+
+PROVE IT. Play it end to end and fix what playing reveals, with selftest- ids.
+Quote the named step from run history. Kill the app mid-rest; show the timer
+still firing, with timestamps. Play with no key. Write the no-leak check as a
+script and show it FAILING on a planted motive. Purge selftest- runs. Report
+what you actually ran, not what you expect to work.

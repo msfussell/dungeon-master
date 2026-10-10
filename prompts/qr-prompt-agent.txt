@@ -1,0 +1,47 @@
+Build "dungeon-master": a Durable Agent on Diagrid Catalyst, in Python, via the
+Catalyst MCP tools. Ask which project; never create one.
+
+AGENT. An Agent resource fronts an agent my app runs: diagrid[langgraph],
+DaprWorkflowGraphRunner. Catalyst calls INTO it, so run it behind `diagrid dev
+run --app-port`. dev run injects DAPR_*; .env holds the LLM key only.
+
+SPLIT. The model may be wrong about what I MEANT, never about what HAPPENED.
+interpret: model picks one listed action. act: deterministic engine, NO model
+call. narrate: model writes prose from given facts. Results carry `beat` (model
+may rewrite) and `verbatim` (printed exactly, never shown to the model). Rule
+lines are verbatim only - a narrator handed "you have not got 5 gold" describes
+the purchase happening.
+
+GAME. Rooms, n/s/e/w, max 3 choices a scene. Track health, gold, inventory,
+every choice. A talking door, a cursed item, a merchant who remembers being
+cheated. The cursed item is also the compass - how far to what it wants, which
+way - and costs health per turn. A taken choice disappears; a merely useless
+one stays and says why. Exits name their destination once walked, else
+"unexplored". Highlight interactable nouns. Vary repeated flavour. Spinner
+while the model writes. Open with one line saying what I seek. No key must
+still play: engine parser, written prose, verbatim refusal, no improvising.
+
+SECRET. The door hides a vault, and opens when I offer it the cursed item. Put
+that offer on the menu whenever I carry it and stand where it works, but no
+string gives the door a motive and the model is never told the condition.
+Opening it records a step named secret_vault_found, shows a dragon guarding a
+glowing durable scroll, and prints "Show this run to the Diagrid booth to claim
+your reward."
+
+NODE LIMITS. Nodes all run as one generic execute_node_activity, payloads
+withheld by default - so a node named secret_vault_found does NOT name a step
+in history; a separate WORKFLOW does. A node runs inside an activity and cannot
+create_timer, so the campfire is its own workflow. Register both on the
+runner's WorkflowRuntime. Rest in seconds, default 120, random waking event.
+
+IDENTITY TRAP. My terminal is a different App ID, and Dapr scopes state and the
+workflow API per identity, so the client cannot read the agent's memory or runs
+- it 404s. Whatever it needs, it asks the AGENT. Save = agent memory, each turn
+its own durable run. "save and quit" exits; restart resumes with one dramatic
+sentence; quitting mid-rest still collects the waking event next turn.
+
+PROVE IT. Play it end to end and fix what playing reveals, with selftest- ids.
+Show a turn killed mid-node RESUMING, not restarting. Quote the named step from
+run history. Kill every process mid-rest; show the timer still firing, with
+timestamps. Play with no key. Write the no-leak check as a script and show it
+FAILING on a planted motive. Purge selftest- runs. Report what you ran.

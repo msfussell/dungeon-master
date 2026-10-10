@@ -1,0 +1,39 @@
+[project]
+name = "dungeon-master"
+version = "1.0.0"
+description = "One text adventure, two durable shapes on Diagrid Catalyst: a Dapr Workflow and a Durable Agent, over one shared rules engine."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "dapr==1.18.3",
+    "dapr-ext-workflow==1.18.3",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+# The workflow front end narrates with either provider.
+workflow = ["openai==3.26.0", "anthropic>=1.0.0"]
+# The agent front end runs the graph as a durable workflow.
+agent = ["diagrid[langgraph]==0.5.3", "langchain-openai>=0.2"]
+# No "all" extra: these two cannot co-install. diagrid[langgraph] pulls in
+# dapr-agents, which pins pydantic==2.10.5, and the workflow extra needs
+# newer. Declared below as a conflict so uv resolves each on its own.
+
+[tool.uv]
+# The two front ends genuinely cannot share one environment -- see the note
+# above. Declaring the conflict is what lets uv lock each extra separately
+# instead of failing to resolve the project at all.
+conflicts = [
+    [{ extra = "workflow" }, { extra = "agent" }],
+]
+
+[project.scripts]
+dungeon-master-workflow = "dungeon_master.workflow.cli:main"
+dungeon-master-agent = "dungeon_master.agent.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dungeon_master"]

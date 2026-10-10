@@ -1,0 +1,16 @@
+#!/bin/sh
+# Regenerate the two connection files. The front ends are different App IDs,
+# so each needs its own: .env.workflow for the App, .env.agent for the Agent.
+#
+# Both are gitignored. Get the values with the Catalyst MCP tool
+# `catalyst_get_connection` (project dungeon-master) and paste them in, or use
+# the CLI if you have it configured. Never commit either file.
+set -e
+PROJECT="${DM_PROJECT:-dungeon-master}"
+echo "Run these and paste the output into the matching file:"
+echo
+echo "  catalyst_get_connection  project=$PROJECT  appId=dungeon-master        -> .env.workflow"
+echo "  catalyst_get_connection  project=$PROJECT  appId=dungeon-master-agent  -> .env.agent"
+echo
+echo "The agent front end does not strictly need .env.agent when it is started"
+echo "by scripts/serve-agent: 'diagrid dev run' injects DAPR_* itself."

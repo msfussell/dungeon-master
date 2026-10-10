@@ -1,0 +1,14 @@
+#!/bin/sh
+# The agent front end is called INTO by Catalyst, so it needs an inbound
+# endpoint. On a laptop that is an app tunnel. `dev run` injects the DAPR_*
+# values, which is why .env must not contain them.
+#
+# Note: this CLI spells the flag --app-id (not --id), and Catalyst health-checks
+# the app with GET / which the adapter answers 404 -- so the first command
+# within about a minute of starting can fail with "app is not in a healthy
+# state". It settles on its own.
+exec diagrid dev run \
+  --project "${DM_PROJECT:-dungeon-master}" \
+  --app-id dungeon-master-agent \
+  --app-port 5001 --yes -- \
+  sh -c 'set -a; [ -f ./.env ] && . ./.env; set +a; exec uv run python -m dungeon_master.agent.agent'

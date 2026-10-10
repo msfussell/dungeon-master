@@ -1,0 +1,14 @@
+# Connections and keys. Never commit. Regenerate with scripts/refresh-connection.
+.env
+.env.*
+!.env.example
+
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.DS_Store

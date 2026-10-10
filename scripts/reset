@@ -1,0 +1,25 @@
+#!/bin/sh
+# Purge this project's workflow runs.
+#
+# terminate and purge both need a CONNECTED WORKFLOW WORKER, which makes the
+# natural order (stop the app, then clean up) exactly wrong. So this starts a
+# worker, purges, and stops it again.
+set -e
+PROJECT="${DM_PROJECT:-dungeon-master}"
+PREFIX="${1:-selftest-}"
+
+echo "Starting a worker so purge has something to talk to..."
+uv run python -m dungeon_master.workflow.worker &
+WORKER=$!
+trap 'kill $WORKER 2>/dev/null || true' EXIT
+sleep 12
+
+diagrid workflow list --project "$PROJECT" 2>/dev/null \
+  | awk 'NR>1 && NF>2 {print $1" "$2}' | grep "$PREFIX" > /tmp/dm-reset.txt || true
+COUNT=$(wc -l < /tmp/dm-reset.txt | tr -d ' ')
+echo "Purging $COUNT run(s) matching '$PREFIX'..."
+while read -r app id; do
+  diagrid workflow terminate --instance-id "$id" --app-id "$app" --project "$PROJECT" >/dev/null 2>&1 || true
+  diagrid workflow purge     --instance-id "$id" --app-id "$app" --project "$PROJECT" >/dev/null 2>&1 || true
+done < /tmp/dm-reset.txt
+echo "Done."
