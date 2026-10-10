@@ -224,18 +224,25 @@ void setup() {
   ts.setRotation(0);
   probe("touch", tok, "tap to show xy");
 
-  // Ten seconds to prod the screen: the raw numbers go to serial and are what
-  // the calibration constants above should be set from.
-  unsigned long until = millis() + 10000;
-  while (millis() < until) {
+  // A window to prod the screen in. The raw numbers go to serial and are what
+  // the calibration constants above should be set from: the XPT2046 range
+  // varies per unit, so the defaults are nominal until someone touches glass.
+  // Ends early once it has seen four distinct touches, so a calibrated board
+  // does not sit here on every boot.
+  line(probeRow, "touch 4 corners ->", C_TITLE);
+  unsigned long until = millis() + 30000;
+  int seen = 0;
+  while (millis() < until && seen < 4) {
     if (ts.touched()) {
       TS_Point p = ts.getPoint();
       char buf[48];
       snprintf(buf, sizeof buf, "raw x=%4d y=%4d z=%3d", p.x, p.y, p.z);
       line(probeRow, buf, C_BTN_TXT);
       Serial.printf("[touch] %s\n", buf);
+      seen++;
+      while (ts.touched()) delay(20);   // one reading per press
     }
-    delay(50);
+    delay(30);
   }
   probeRow++;
 
