@@ -208,7 +208,11 @@ def _map_screen(slot: str, scene: dict) -> dict:
                 "cells": list(shown.values())},
         "buttons": [{"k": "back", "label": "back", "dir": True}],
         "seq": -2,
-        "hud": _compact_hud(scene.get("hud") or ""),
+        # The run id, not the slot: a slot is a device, a run is an adventure,
+        # and when a terminal has joined the same adventure this is the line
+        # that proves it. 240px at font 2 is about 34 characters.
+        "hud": (f"{scene.get('instance') or slot}  "
+                f"{_compact_hud(scene.get('hud') or '')}")[:34],
         "ended": False,
         "slot": slot,
     }

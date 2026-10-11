@@ -250,6 +250,65 @@ def _next_free(client: wf.DaprWorkflowClient, instance_id: str) -> str:
     return f"{base}-new"
 
 
+def prompt_or_watch(client: wf.DaprWorkflowClient, instance_id: str,
+                    scene: dict) -> tuple[str | None, dict, dict | None]:
+    """Read a command, while watching the run for moves made on another screen.
+
+    This used to be a bare input(), which made the CLI deaf: the adventure is a
+    workflow and anyone holding its instance id can move it -- the device on the
+    booth table, another terminal, a raised event -- and while blocked in input()
+    the CLI saw none of it and kept showing a room the player had already left.
+    So stdin is polled instead, and a scene the CLI did not cause is handed back
+    to be drawn as it arrives.
+
+    Returns (line, scene, output). `line` is None when the run moved under us,
+    in which case `scene` is the new one and the caller redraws instead of
+    sending anything.
+    """
+    import select
+
+    # The run id lives in the prompt. Two screens can hold one adventure, so
+    # "are we on the same run?" is a question the player asks constantly, and it
+    # should not need a flag or a console tab to answer.
+    bare = f"\n{instance_id} > "
+    sys.stdout.write(ui.c(ui.BOLD, bare) if not ui.plain() else bare)
+    sys.stdout.flush()
+    here = scene.get("seq", 0)
+
+    while True:
+        # A short timeout rather than a blocking read: stdin wins when the
+        # player types, and otherwise we look at the run.
+        ready, _, _ = select.select([sys.stdin], [], [], 0.5)
+        if ready:
+            line = sys.stdin.readline()
+            if line == "":
+                raise EOFError
+            return line.rstrip("\n"), scene, None
+
+        try:
+            state = client.get_workflow_state(instance_id)
+        except Exception:
+            continue  # a blip in the poll is not worth interrupting a prompt for
+        if state is None:
+            continue
+
+        if state.runtime_status in TERMINAL_STATES:
+            out = None
+            try:
+                out = json.loads(state.serialized_output) if state.serialized_output else None
+                if isinstance(out, str):
+                    out = json.loads(out)
+            except (ValueError, TypeError):
+                out = None
+            return None, _decode_status(state.serialized_custom_status) or scene, out
+
+        other = _decode_status(state.serialized_custom_status)
+        if other and other.get("seq", 0) > here:
+            print()
+            print(ui.c(ui.NOTICE, "(the other screen moved)"))
+            return None, other, None
+
+
 def _play(client: wf.DaprWorkflowClient, instance_id: str, rest_seconds: int, force_new: bool) -> int:
     from . import narrator
 
@@ -345,7 +404,9 @@ def _play(client: wf.DaprWorkflowClient, instance_id: str, rest_seconds: int, fo
             return 0
 
         try:
-            raw = input(ui.c(ui.BOLD, "\n> ") if not ui.plain() else "\n> ")
+            raw, scene, output = prompt_or_watch(client, instance_id, scene)
+            if raw is None:
+                continue  # the run moved elsewhere; redraw rather than send
         except (EOFError, KeyboardInterrupt):
             print()
             print(ui.c(ui.DIM, "Left where you stand. The run is still open; start the app "
