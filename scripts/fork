@@ -1,0 +1,7 @@
+#!/bin/sh
+# List an adventure's decision points, or fork it from one of them.
+#   ./scripts/fork cyd-1-1              list where you could branch
+#   ./scripts/fork cyd-1-1 18           fork there
+#   ./scripts/fork cyd-1-1 18 the-talk  ... into a named instance
+cd "$(dirname "$0")/.." || exit 1
+exec uv run --extra workflow python tools/fork.py "$@"

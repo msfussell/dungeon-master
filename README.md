@@ -119,6 +119,50 @@ turn killed mid-node resumes rather than restarting. Two things a LangGraph
 node cannot do get their own workflows: naming a step in history
 (`secret_vault_found`) and creating a durable timer (`campfire_rest`).
 
+## Forking a run (time travel)
+
+Because the history is the save file, Catalyst can replay it up to any point
+and carry on differently. `scripts/fork` lists where you could branch:
+
+```
+$ ./scripts/fork cyd-1-1
+cyd-1-1 -- fork points, oldest first
+
+  event  at        you typed               which ran
+  -----  --------  ----------------------  --------------------
+      3  01:35:47  south                   enter_room
+      6  01:35:52  1                       take_cursed_item
+      9  01:35:58  north                   enter_room
+     12  01:36:23  north                   enter_room
+     15  01:36:58  1                       secret_vault_found
+     18  01:37:12  north                   enter_room
+     21  01:40:09  1                       claim_durable_scroll
+```
+
+Then branch from one:
+
+```
+./scripts/fork cyd-1-1 18 the-other-ending
+```
+
+The new run comes up in the vault with the same health, the same gold and the
+same choices already made -- and the scroll still unclaimed, so you can talk
+to the dragon instead of robbing it. The original is untouched and stays
+`completed`; both adventures now exist. The fork's own record says where it
+came from (`rerunSourceWorkflowId`, `rerunFromEventId`).
+
+Underneath it is one CLI call, which is worth seeing on its own:
+
+```
+diagrid workflow rerun --app-id dungeon-master --project dungeon-master \
+  --instance-id cyd-1-1 --event-id 18 --new-workflow-id the-other-ending
+```
+
+Two things to know. A worker must be connected -- rerun, terminate and purge
+all go through the app, not around it. And the `catalyst_rerun_workflow_run`
+MCP tool returns `HTTP 500 unexpected end of JSON input` where the CLI works,
+so the CLI is the path here (diagridio/catalyst-ai#65).
+
 ## Known rough edges
 
 - The agent front end needs an app tunnel, which the workflow one does not. Its
