@@ -40,6 +40,9 @@ Catalyst, playable three ways from one engine:
 - `prompt_or_watch` — the CLI polls the run while idle at the prompt instead of
   blocking in `input()`, so a move made on the device redraws the terminal under
   `(the other screen moved)`.
+- The device polls `GET /scene?slot=&since=` every 3s and redraws when the run
+  moved elsewhere, so the two screens now track each other in both directions.
+  Overlays (map, "more") carry a negative `seq` and are never polled away.
 - The run id is visible on both screens: in the CLI prompt (`cyd-1-5 > `) and in
   the HUD of the device's map screen (tap the title bar).
 

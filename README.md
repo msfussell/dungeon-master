@@ -191,11 +191,21 @@ uv run dungeon-master-workflow --instance cyd-1-4
 Both clients must act as the same App ID, which they do because both load
 `.env.workflow`. A different identity cannot see the instance at all.
 
+Each screen notices the other. The CLI polls the run while it waits at the
+prompt and redraws under `(the other screen moved)`; the device asks the bridge
+`GET /scene?slot=<slot>&since=<seq>` every three seconds, which answers
+`{"nochange": true}` almost every time and a full screen when the run has
+moved. Neither is pushed to, so a move lands on the other screen within a few
+seconds rather than instantly.
+
+That poll deliberately never *starts* an adventure, which the device's tap
+handler does: a poll that created a run would wipe the ending screen and open a
+fresh dungeon seconds after someone won.
+
 It is a shared controller rather than two players: commands are consumed in
 history order, so if both press `1` the first takes the choice and the second
-is told that is not something it can do here. The device redraws on its next
-poll, not instantly. Attaching sends `__resume__`, which prints the recap line
-and costs no turn.
+is told that is not something it can do here. Attaching sends `__resume__`,
+which prints the recap line and costs no turn.
 
 ## Known rough edges
 

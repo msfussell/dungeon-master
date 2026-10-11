@@ -120,9 +120,9 @@ static bool connectWifi() {
   return WiFi.status() == WL_CONNECTED;
 }
 
-static bool httpGet(const String &path, String &body) {
+static bool httpGet(const String &path, String &body, uint16_t timeoutMs = 20000) {
   HTTPClient http;
-  http.setTimeout(20000);
+  http.setTimeout(timeoutMs);
   String url = String("http://") + BRIDGE_HOST + ":" + BRIDGE_PORT + path;
   if (!http.begin(url)) return false;
   int code = http.GET();
@@ -146,6 +146,14 @@ static bool httpPost(const String &path, const String &payload, String &body) {
   http.end();
   return code == 200;
 }
+
+// The background poll. The CLI, another board, or anyone holding this run's
+// instance id can move the adventure, and until now the board only looked when
+// it was tapped -- so a move made in the terminal sat unseen on the glass.
+static long lastSeq = -1;          // seq of the last real scene drawn
+static bool overlay = false;       // map or "more" is up; do not poll it away
+static uint32_t lastPoll = 0;
+static const uint32_t POLL_MS = 3000;
 
 // ------------------------------------------------------------- the screen ---
 // The map, drawn from the bridge's fog-of-war cells. Only rooms the player has
@@ -221,6 +229,9 @@ static void drawMap(JsonDocument &doc) {
 }
 
 static void drawScene(JsonDocument &doc) {
+  long s = doc["seq"] | -1;
+  if (s >= 0) { lastSeq = s; overlay = false; } else { overlay = true; }
+
   if (doc["map"].is<JsonObject>()) { drawMap(doc); return; }
   tft.fillScreen(C_BG);
 
@@ -514,6 +525,22 @@ void setup() {
 
 // ------------------------------------------------------------------- loop ---
 void loop() {
+  // Ask the bridge whether the run moved without us. Quiet on purpose: a failed
+  // poll draws nothing, because a blip in the wifi is not news and must not
+  // replace the room with an error banner.
+  if (!overlay && millis() - lastPoll > POLL_MS) {
+    lastPoll = millis();
+    String body;
+    String path = String("/scene?slot=") + slot + "&since=" + String(lastSeq);
+    if (httpGet(path, body, 4000)) {
+      JsonDocument doc;
+      if (!deserializeJson(doc, body) && !(doc["nochange"] | false)
+          && !doc["error"].is<const char *>()) {
+        drawScene(doc);
+      }
+    }
+  }
+
   // The BOOT button is the board's only physical button, and opens the map
   // too, for anyone who would rather press a thing than tap glass.
   if (digitalRead(PIN_BOOT) == LOW) {

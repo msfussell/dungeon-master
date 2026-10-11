@@ -298,6 +298,31 @@ def _ensure_run(slot: str) -> dict:
     return _screen(slot, scene or {})
 
 
+def _poll(slot: str, since: int) -> dict:
+    """Has this slot's adventure moved since `since`? The device's background poll.
+
+    Two differences from _ensure_run, and both matter.
+
+    It never starts an adventure. _ensure_run exists to begin the next one, which
+    is right when a player taps the screen and wrong every three seconds: a poll
+    that created a run would wipe the ending screen and open a fresh dungeon a
+    few seconds after someone won.
+
+    And it answers `nochange` rather than the scene, which is almost always the
+    answer. The board re-renders nothing and parses 20 bytes instead of 2KB.
+    """
+    from ..workflow import cli as wcli
+
+    iid = _instance_for(slot, start_new_if_finished=False)
+    if iid is None:
+        return {"nochange": True}
+    state = _client.get_workflow_state(iid)
+    scene = wcli._decode_status(state.serialized_custom_status) if state else None
+    if not scene or int(scene.get("seq", 0)) == since:
+        return {"nochange": True}
+    return _screen(slot, scene)
+
+
 def _do_command(slot: str, key: str) -> dict:
     from ..workflow import cli as wcli
 
@@ -357,9 +382,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send({"ok": True, "game": "dungeon-master", "t": int(time.time())})
             return
         if u.path == "/scene":
-            slot = (parse_qs(u.query).get("slot") or ["cyd-1"])[0]
+            q = parse_qs(u.query)
+            slot = (q.get("slot") or ["cyd-1"])[0]
+            since = (q.get("since") or [None])[0]
             with _lock:
-                self._send(_ensure_run(slot))
+                # `since` makes it a poll: cheap, and it never starts a run.
+                if since is not None:
+                    try:
+                        self._send(_poll(slot, int(since)))
+                    except (ValueError, TypeError):
+                        self._send({"error": "bad since"}, 400)
+                else:
+                    self._send(_ensure_run(slot))
             return
         self._send({"error": "not found"}, 404)
 
@@ -385,7 +419,7 @@ def main() -> None:
     _start_worker()
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
     log.info("bridge listening on http://%s:%d", HOST, PORT)
-    log.info("device endpoints: GET /ping  GET /scene?slot=cyd-1  POST /command")
+    log.info("device endpoints: GET /ping  GET /scene?slot=cyd-1[&since=N]  POST /command")
     try:
         srv.serve_forever()
     finally:
