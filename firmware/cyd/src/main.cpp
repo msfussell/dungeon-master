@@ -230,19 +230,15 @@ static void drawScene(JsonDocument &doc) {
     tft.drawString(v.as<const char *>(), 6, y, 2);
     y += ROW_H;
   }
-  // A glyph, not an illustration. Two 28px icons on one band cost about a row
-  // and a half and still read as "dragon" and "scroll"; the full-size version
-  // this replaces read as a blob, because primitives do architecture and
-  // icons well and large organic shapes badly.
+  // The vault gets a band of dark with something awake in it. Three rows, which
+  // the bridge reserves, so the prose below is not squeezed out.
   const char *art = doc["art"] | "";
-  if (art[0] && y + 34 <= btnTop) {
-    int band = 30;
-    int gap = 14;
-    int total = 28 + gap + 28;
-    int ax = (SCR_W - total) / 2;
-    artMiniDragon(tft, ax, y + 1, 28);
-    artMiniScroll(tft, ax + 28 + gap, y + 1, 28);
-    y += band + 4;
+  if (art[0]) {
+    int bandH = 3 * ROW_H;
+    if (y + bandH <= btnTop) {
+      artVaultDark(tft, 0, y - 2, SCR_W, bandH);
+      y += bandH;
+    }
   }
 
   tft.setTextColor(C_PROSE, C_BG);

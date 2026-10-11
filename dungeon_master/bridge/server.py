@@ -132,8 +132,12 @@ def _screen(slot: str, scene: dict, ended: bool = False) -> dict:
         buttons.append({"k": "look", "label": "look", "dir": True})
     prose = scene.get("prose") or ""
     _full_prose[slot] = layout.wrap(prose)
+    # The vault's picture takes rows off the top, so the budget has to know
+    # about it. Previously the art was handled by blanking the prose outright,
+    # which left the screen showing a drawing and no words at all.
+    art_rows = layout.ART_ROWS if scene.get("room") == world.VAULT_ROOM else 0
     out = layout.compose(scene.get("title") or "", scene.get("verbatim") or [],
-                         prose, buttons)
+                         prose, buttons, art_rows=art_rows)
 
     # The one illustration in the game, and only where it is the payoff: the
     # vault. Asking for it anywhere else would make it wallpaper, and the
@@ -141,10 +145,6 @@ def _screen(slot: str, scene: dict, ended: bool = False) -> dict:
     # from primitives, so this costs one short string.
     if scene.get("room") == world.VAULT_ROOM:
         out["art"] = "vault"
-        # The picture replaces the paragraph that described it; the words are
-        # still a tap away on "more".
-        out["prose"] = []
-        out["more"] = bool(_full_prose[slot])
     # A "more" button, because the prose that did not fit is otherwise
     # unreachable -- an ellipsis the player cannot tap is just a tease.
     if out.get("more") and not ended:

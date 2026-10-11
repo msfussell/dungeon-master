@@ -25,45 +25,49 @@
 #define ART_GLOW     0xFEA0
 
 // ---------------------------------------------------------------------------
-// A dragon's head, about 28px. Small enough that suggestion does the work:
-// a snout, a horn, an eye and a breath of fire is a dragon; the same shapes at
-// 120px are a mess, which is what went wrong the first time.
+// What is in the vault, drawn as what you would actually see of it.
+//
+// Three attempts at a dragon were abandoned: a large shaded one read as a
+// blob, a 28px head read as nothing, and a triangle silhouette read as a
+// solid mass. The honest conclusion is that a convincing animal is beyond
+// what can be hand-plotted here, and a shape nobody recognises is worse than
+// no shape.
+//
+// So this draws the dark instead. Two amber slit eyes, a suggestion of a mass
+// around them a shade above black, and nothing else -- which is the truthful
+// view of something enormous lying in an unlit room, and needs no draughting
+// talent to land. The prose below says the word "dragon"; the picture only has
+// to make the room feel occupied.
+//
+// If you want an actual dragon, tools/png2sprite.py converts any small image
+// into a 1-bit sprite that drawBitmap can take -- see its header.
 // ---------------------------------------------------------------------------
-inline void artMiniDragon(TFT_eSPI &tft, int x, int y, int s = 28) {
-  int h = s / 2;                       // head radius-ish
-  int cx = x + h, cy = y + h;
+inline void artVaultDark(TFT_eSPI &tft, int x, int y, int w, int h) {
+  tft.fillRect(x, y, w, h, ART_VOID);
 
-  // skull and jaw
-  tft.fillCircle(cx, cy, h * 8 / 10, ART_SCALE);
-  tft.fillTriangle(cx, cy - h / 3, cx, cy + h / 2,
-                   cx + h * 15 / 10, cy + h / 5, ART_SCALE);   // snout
-  tft.fillTriangle(cx - h / 5, cy - h * 7 / 10,
-                   cx + h / 2, cy - h / 4,
-                   cx - h * 9 / 10, cy - h * 15 / 10, ART_STONE_L);  // horn
-  tft.fillTriangle(cx - h * 7 / 10, cy + h / 5,
-                   cx - h * 4 / 10, cy + h * 9 / 10,
-                   cx - h * 14 / 10, cy + h * 8 / 10, ART_SCALE);    // neck frill
+  const int cx = x + w / 2, cy = y + h / 2;
 
-  // the eye: the only warm thing in the animal
-  tft.fillCircle(cx + h / 4, cy - h / 4, s / 9 + 1, ART_EYE);
-  tft.drawPixel(cx + h / 4, cy - h / 4, ART_VOID);
+  // The mass: barely-there wedges, a shade above black, so the eye reads bulk
+  // without being asked to identify anatomy.
+  tft.fillTriangle(cx - w / 3, y + h, cx - w / 8, cy - h / 6,
+                   cx + w / 10, y + h, 0x1061);
+  tft.fillTriangle(cx + w / 12, y + h, cx + w / 4, cy - h / 8,
+                   cx + w / 3, y + h, 0x1061);
+  tft.fillTriangle(cx - w / 2, y + h, cx - w / 3, cy + h / 6,
+                   cx - w / 6, y + h, 0x0820);
 
-  // a breath of fire, two tapering triangles
-  int mx = cx + h * 15 / 10, my = cy + h / 5;
-  tft.fillTriangle(mx, my - s / 10, mx, my + s / 10, mx + s / 2, my, ART_FLAME);
-  tft.fillTriangle(mx, my - s / 16, mx, my + s / 16, mx + s / 3, my, ART_FLAME_L);
-}
-
-// A rolled scroll glyph, same scale, to sit beside it.
-inline void artMiniScroll(TFT_eSPI &tft, int x, int y, int s = 28) {
-  int w = s, h = s / 2;
-  int cy = y + s / 2;
-  tft.fillCircle(x + w / 2, cy, h * 9 / 10, ART_GLOW);     // its glow
-  tft.fillRect(x + 3, cy - h / 3, w - 6, h * 2 / 3, ART_PAPER);
-  tft.fillCircle(x + 3, cy, h / 3, ART_PAPER_D);
-  tft.fillCircle(x + w - 3, cy, h / 3, ART_PAPER_D);
-  tft.drawFastHLine(x + 6, cy - h / 8, w - 12, ART_PAPER_D);
-  tft.drawFastHLine(x + 6, cy + h / 8, w - 16, ART_PAPER_D);
+  // The eyes. Slits, not circles: a vertical pupil is the whole difference
+  // between "lamps" and "something awake".
+  const int eyeDx = w / 9, eyeR = h / 7;
+  for (int side = -1; side <= 1; side += 2) {
+    int ex = cx + side * eyeDx;
+    tft.fillCircle(ex, cy, eyeR, ART_EYE);
+    tft.fillCircle(ex, cy, eyeR * 2 / 3, 0xFC00);        // hotter centre
+    tft.fillRect(ex - 1, cy - eyeR, 2, eyeR * 2, ART_VOID);  // the slit
+  }
+  // A faint glow under each, as if they are the only light in there.
+  tft.drawFastHLine(cx - eyeDx - eyeR, cy + eyeR + 2, eyeR * 2, 0x6180);
+  tft.drawFastHLine(cx + eyeDx - eyeR, cy + eyeR + 2, eyeR * 2, 0x6180);
 }
 
 // ---------------------------------------------------------------------------

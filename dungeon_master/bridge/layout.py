@@ -42,6 +42,10 @@ CHAR_W = 6.3
 # for a capital-heavy line, since the font is proportional ("M" 10px, "i" 4px).
 COLS = 34
 
+# Rows the vault's picture occupies. Text shares the screen with it rather
+# than being replaced by it.
+ART_ROWS = 3
+
 
 def text_rows(buttons: list[dict]) -> int:
     """How many 18px rows are left for rule lines and prose.
@@ -75,7 +79,7 @@ def button_rows(buttons: list[dict]) -> int:
 
 
 def compose(title: str, rule_lines: list[str], prose: str,
-            buttons: list[dict], cols: int = COLS) -> dict:
+            buttons: list[dict], cols: int = COLS, art_rows: int = 0) -> dict:
     """Everything the device needs to draw one screen, and nothing else.
 
     Returns pre-wrapped lines so the device does no text measurement at all.
@@ -84,7 +88,7 @@ def compose(title: str, rule_lines: list[str], prose: str,
     for line in rule_lines or []:
         rule.extend(wrap(line, cols))
 
-    budget = text_rows(buttons) - len(rule)
+    budget = text_rows(buttons) - len(rule) - art_rows
 
     # Fill the budget with as many WHOLE sentences as fit.
     #
