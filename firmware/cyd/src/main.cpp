@@ -68,7 +68,26 @@ struct Btn { String k, label; int x, y, w, h; };
 static Btn  buttons[10];
 static int  nButtons = 0;
 static bool haveMore = false;
-static String slot = GAME_SLOT;
+// Each board needs its OWN adventure. The slot used to be a #define, which
+// meant four boards flashed from one secrets.h all shared a save and
+// overwrote each other's moves. The eFuse MAC is unique per chip, needs no
+// configuration, and is stable across reboots -- so a board keeps its own
+// adventure without anyone having to remember to edit a file per unit.
+//
+// GAME_SLOT still overrides it, for the board already mid-game under an
+// older name.
+static String deviceSlot() {
+#ifdef GAME_SLOT
+  if (sizeof(GAME_SLOT) > 1) return String(GAME_SLOT);
+#endif
+  uint64_t mac = ESP.getEfuseMac();
+  char buf[16];
+  snprintf(buf, sizeof buf, "cyd-%02x%02x%02x",
+           (uint8_t)(mac >> 24), (uint8_t)(mac >> 32), (uint8_t)(mac >> 40));
+  return String(buf);
+}
+
+static String slot = deviceSlot();
 
 // ------------------------------------------------------------------- utils ---
 static void line(int row, const char *s, uint16_t colour) {
@@ -471,6 +490,9 @@ void setup() {
   tft.drawString("DUNGEON MASTER", 52, 8, 2);
   tft.setTextColor(C_PROSE, ART_MORTAR);
   tft.drawString("press to enter the dungeon", 26, SCR_H - 16, 2);
+  // Which board this is. Four of them in a room look identical otherwise.
+  tft.setTextColor(C_BTN_TXT, ART_MORTAR);
+  tft.drawString(slot, 6, 24, 2);
 
   // Let the eyes blink while it waits, so the screen is not simply frozen.
   bool lit = true;
