@@ -235,6 +235,21 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
 
+def _next_free(client: wf.DaprWorkflowClient, instance_id: str) -> str:
+    """The next unused `<slot>-N`, so the suggestion in a refusal is one you can use.
+
+    Matches the numbering the device bridge uses, for the same reason: finished
+    adventures stay put and keep their history.
+    """
+    import re
+
+    base = re.sub(r"-\d+$", "", instance_id)
+    for n in range(1, 500):
+        if client.get_workflow_state(f"{base}-{n}") is None:
+            return f"{base}-{n}"
+    return f"{base}-new"
+
+
 def _play(client: wf.DaprWorkflowClient, instance_id: str, rest_seconds: int, force_new: bool) -> int:
     from . import narrator
 
@@ -259,13 +274,31 @@ def _play(client: wf.DaprWorkflowClient, instance_id: str, rest_seconds: int, fo
     scene: dict | None = None
     output: dict | None = None
 
-    if existing is None or existing.runtime_status in TERMINAL_STATES:
-        if existing is not None:
-            # A finished run cannot be reused as a save slot; clear it first.
+    if existing is not None and existing.runtime_status in TERMINAL_STATES:
+        # REFUSE. Dapr lets a terminal instance id be reused, and reusing one means
+        # purging it -- which in this game destroys the save file, because the save
+        # file IS the history. A finished adventure holds the only record that the
+        # vault was found. So an id that has been played is never silently recycled:
+        # say what is there, and make the player choose.
+        out = existing.serialized_output
+        print()
+        print(ui.c(ui.NOTICE, f"'{instance_id}' is a finished adventure "
+                              f"({existing.runtime_status.name.lower()}). It is not a free slot."))
+        if out:
             try:
-                client.purge_workflow(instance_id)
-            except Exception:
+                done = json.loads(out) or {}
+                if done.get("secret_vault_found"):
+                    print(ui.c(ui.RULE, "  That run found the secret vault. "
+                                        "Purging it destroys the only record."))
+            except (ValueError, TypeError):
                 pass
+        print(ui.c(ui.DIM, f"  read it:    {config.console_url(instance_id)}"))
+        print(ui.c(ui.DIM, f"  play on:    --instance {_next_free(client, instance_id)}"))
+        print(ui.c(ui.DIM, f"  branch it:  ./scripts/fork {instance_id}"))
+        print(ui.c(ui.DIM,  "  overwrite:  --new   (purges it; this cannot be undone)"))
+        return 1
+
+    if existing is None:
         client.schedule_new_workflow(
             workflow="dungeon_master",
             input={"rest_seconds": rest_seconds},

@@ -151,7 +151,20 @@ to the dragon instead of robbing it. The original is untouched and stays
 `completed`; both adventures now exist. The fork's own record says where it
 came from (`rerunSourceWorkflowId`, `rerunFromEventId`).
 
-Underneath it is one CLI call, which is worth seeing on its own:
+A played instance id is never recycled. Pointing the CLI at a finished
+adventure refuses rather than purging it, because purging it is what would
+destroy the save file -- and says so loudly when that run found the vault:
+
+```
+'cyd-1-1' is a finished adventure (completed). It is not a free slot.
+  That run found the secret vault. Purging it destroys the only record.
+  read it:    https://catalyst.diagrid.io/workflows/dungeon-master/cyd-1-1?project=dungeon-master
+  play on:    --instance cyd-1-5
+  branch it:  ./scripts/fork cyd-1-1
+  overwrite:  --new   (purges it; this cannot be undone)
+```
+
+Underneath the fork is one CLI call, which is worth seeing on its own:
 
 ```
 diagrid workflow rerun --app-id dungeon-master --project dungeon-master \
@@ -162,6 +175,27 @@ Two things to know. A worker must be connected -- rerun, terminate and purge
 all go through the app, not around it. And the `catalyst_rerun_workflow_run`
 MCP tool returns `HTTP 500 unexpected end of JSON input` where the CLI works,
 so the CLI is the path here (diagridio/catalyst-ai#65).
+
+## Two screens, one adventure
+
+The CLI and the device can play the same run at the same time. The instance id
+is the whole handshake -- neither client owns the game, both only raise
+`player_command` events and read the workflow's custom status, and the workflow
+does not know who typed:
+
+```sh
+diagrid workflow list --app-id dungeon-master --project dungeon-master   # cyd-1-4 running
+uv run dungeon-master-workflow --instance cyd-1-4
+```
+
+Both clients must act as the same App ID, which they do because both load
+`.env.workflow`. A different identity cannot see the instance at all.
+
+It is a shared controller rather than two players: commands are consumed in
+history order, so if both press `1` the first takes the choice and the second
+is told that is not something it can do here. The device redraws on its next
+poll, not instantly. Attaching sends `__resume__`, which prints the recap line
+and costs no turn.
 
 ## Known rough edges
 
