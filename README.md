@@ -134,6 +134,12 @@ node cannot do get their own workflows: naming a step in history
 - The two front ends' dependencies conflict, so they need separate
   environments. `uv sync --extra workflow` / `--extra agent`, never both.
 
+## Licence
+
+Apache-2.0 — see [LICENSE](LICENSE). Apache rather than MIT because it carries
+an explicit patent grant, and because Dapr itself is Apache-2.0, so this sits
+in the same licence as the ecosystem it demonstrates.
+
 ## Issues this shook out
 
 Filed upstream while building it:
