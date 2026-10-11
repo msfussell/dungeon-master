@@ -11,6 +11,8 @@
 #pragma once
 #include <TFT_eSPI.h>
 
+#include "dragon_sprite.h"
+
 #define ART_STONE    0x5AEB
 #define ART_STONE_D  0x31A6
 #define ART_STONE_L  0x7BCF
@@ -45,6 +47,22 @@
 inline void artVaultDark(TFT_eSPI &tft, int x, int y, int w, int h) {
   tft.fillRect(x, y, w, h, ART_VOID);
 
+  // A real dragon, supplied as a picture and converted by tools/png2sprite.py
+  // -- 585 bytes, no SD card. This is the thing four attempts at plotting
+  // primitives could not produce: the drawing was always the weak link, never
+  // the medium, and a 1-bit sprite moves that problem to someone who can draw.
+  if (DRAGON_H <= h) {
+    int dx = x + (w - DRAGON_W) / 2;
+    int dy = y + (h - DRAGON_H) / 2;
+    tft.drawBitmap(dx, dy, DRAGON, DRAGON_W, DRAGON_H, ART_SCALE);
+    // One warm eye, placed on the head rather than guessed: the silhouette has
+    // no features, so the only thing that makes it look alive is this.
+    tft.fillCircle(dx + DRAGON_W * 32 / 72, dy + DRAGON_H * 14 / 65, 2, ART_EYE);
+    return;
+  }
+
+  // Not enough room for the sprite: fall back to the dark and two eyes, which
+  // was what stood here before and still reads as something enormous.
   const int cx = x + w / 2, cy = y + h / 2;
 
   // The mass: barely-there wedges, a shade above black, so the eye reads bulk

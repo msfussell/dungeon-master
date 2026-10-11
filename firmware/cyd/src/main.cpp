@@ -234,7 +234,7 @@ static void drawScene(JsonDocument &doc) {
   // the bridge reserves, so the prose below is not squeezed out.
   const char *art = doc["art"] | "";
   if (art[0]) {
-    int bandH = 3 * ROW_H;
+    int bandH = 4 * ROW_H;        // the dragon sprite is 65px tall
     if (y + bandH <= btnTop) {
       artVaultDark(tft, 0, y - 2, SCR_W, bandH);
       y += bandH;

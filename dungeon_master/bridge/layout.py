@@ -42,9 +42,10 @@ CHAR_W = 6.3
 # for a capital-heavy line, since the font is proportional ("M" 10px, "i" 4px).
 COLS = 34
 
-# Rows the vault's picture occupies. Text shares the screen with it rather
-# than being replaced by it.
-ART_ROWS = 3
+# Rows the vault's picture occupies -- the dragon sprite is 65px tall, so four
+# 18px rows. Text shares the screen with it rather than being replaced by it,
+# and the firmware reserves the same number; disagreeing clips the prose.
+ART_ROWS = 4
 
 
 def text_rows(buttons: list[dict]) -> int:

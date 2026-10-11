@@ -26,6 +26,8 @@ def main() -> int:
                     help="pixels darker than this become ink")
     ap.add_argument("--invert", action="store_true",
                     help="use for a light subject on a dark background")
+    ap.add_argument("--no-crop", action="store_true",
+                    help="keep the source's padding instead of cropping to the ink")
     a = ap.parse_args()
 
     try:
@@ -36,6 +38,18 @@ def main() -> int:
         return 1
 
     im = Image.open(a.image).convert("L")
+
+    # Crop to the ink first. Stock silhouettes come padded -- this one was
+    # 640x640 with nine blank rows top and bottom -- and that padding costs
+    # sprite rows AND shrinks the subject, so the detail breaks up at the
+    # target width for no reason.
+    if not a.no_crop:
+        from PIL import ImageChops, ImageOps
+        mask = im if a.invert else ImageOps.invert(im)
+        bbox = mask.point(lambda v: 255 if v > (255 - a.threshold) else 0).getbbox()
+        if bbox:
+            im = im.crop(bbox)
+
     h = max(1, round(im.height * a.width / im.width))
     im = im.resize((a.width, h), Image.LANCZOS)
 
