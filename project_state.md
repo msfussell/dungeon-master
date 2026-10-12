@@ -23,8 +23,8 @@ One engine, three front ends:
 | ESP32 Cheap Yellow Display | bridge + `firmware/cyd` | no (the board calls the bridge over wifi) |
 
 - Code: `/Users/markfussell/dev/src/catalyst/dungeon-master`
-- GitHub: <https://github.com/msfussell/dungeon-master> — **still private**
-- Licence: Apache-2.0, "Copyright 2026 Mark Fussell" (holder not yet settled)
+- GitHub: <https://github.com/msfussell/dungeon-master> — **public** since 2026-10-12
+- Licence: Apache-2.0, "Copyright 2026 Mark Fussell" (settled 2026-10-12)
 
 ## 2. Run it
 
@@ -60,9 +60,9 @@ touch, calibration, wifi and the poll interval are firmware: reflash over USB.
 - **Bridge** running on port 8080, pids 28235/28237. It hosts the HTTP server
   **and** the workflow worker, so killing it takes the worker with it, and every
   adventure loses its ability to start, terminate, purge or rerun until it is back.
-- **Device** is slot `cyd-1`, currently on adventure `cyd-1-9`, and is polling
-  from `192.168.0.18` — 14,104 polls in the log, so the background poll works in
-  the field and not only in tests.
+- **Device** is slot `cyd-1`, currently on adventure `cyd-1-9`, and polls from
+  its own address on the LAN — 14,104 polls in the log, so the background poll
+  works in the field and not only in tests.
 - **`mark-play`** — running, a terminal-only adventure, parked mid-game.
 - **`cyd-1-1` … `cyd-1-8`** — completed, and **every one of them found the secret
   vault**. `cyd-1-4` was terminated deliberately to let the device move on.
@@ -227,31 +227,40 @@ Full drafts in `issue-drafts/`.
 
 ## 9. Next steps
 
-1. **Settle the licence holder** — "Mark Fussell" or "Diagrid Inc." — one line
-   in `LICENSE`, before the repo goes public.
-2. **Make the repo public**: `gh repo edit msfussell/dungeon-master --visibility public`.
-   Check `.gitignore` still covers `.env*` and `firmware/cyd/include/secrets.h`;
-   no secret has ever been committed and it should stay that way.
-3. **Back the device poll off when idle.** 14,104 polls are 14,104
+1. **Back the device poll off when idle.** 14,104 polls are 14,104
    `get_workflow_state` calls against Catalyst, and four boards would be four
    times that. Suggested: 3s for a minute after any activity, then 10-15s.
    `POLL_MS` in `firmware/cyd/src/main.cpp` (firmware change, so a reflash).
-4. **Purge the leftovers** — `new-fork`, and `mark-play` when it is finished
+2. **Purge the leftovers** — `new-fork`, and `mark-play` when it is finished
    with. Keep every `cyd-1-N`: they all found the vault.
-5. **Flash the other three boards.** Slots derive from the chip, so no per-board
+3. **Flash the other three boards.** Slots derive from the chip, so no per-board
    build is needed. Untested on more than one board.
-6. **Split the worker out of the bridge**, or accept that restarting the bridge
+4. **Split the worker out of the bridge**, or accept that restarting the bridge
    drops the worker for every adventure. Fine on a desk, wrong at a booth.
-7. **`POST /attach?slot=<slot>&instance=<id>`** on the bridge, so a board can
+5. **`POST /attach?slot=<slot>&instance=<id>`** on the bridge, so a board can
    join an arbitrarily-named run. Today a shared run must be named `cyd-1-N` for
    the device to find it, which is why `mark-play` could not be joined.
-8. **Pub/sub between the boards** — one adventure on four screens, or four that
+6. **Pub/sub between the boards** — one adventure on four screens, or four that
    can see each other. The project has one managed pub/sub; separate by topic.
-9. **Workflow history signing.** `enableWorkflowHistorySigning` is creation-only,
+7. **Workflow history signing.** `enableWorkflowHistorySigning` is creation-only,
    so it needs a new project — worth it if "show this run to the booth" should
    be tamper-evident.
 
-## 10. How to work on this
+## 10. The repo is public
+
+Audited before it went public, 2026-10-12: no credential has ever been
+committed, in any commit. `.env*`, `firmware/cyd/include/secrets.h` and
+`firmware/cyd/.pio/` are ignored — that last one matters, because a built
+`firmware.bin` carries the wifi password in plaintext. `.env.example` and
+`secrets.h.example` hold placeholders only.
+
+Two things follow from being public. The game's solution is now readable in
+`engine/world.py`, so `make leakcheck` protects the *playing* experience and not
+the secret itself — worth remembering before the booth hands out a reward for
+finding the vault. And history is public too, so a secret committed by accident
+has to be treated as disclosed, not merely reverted.
+
+## 11. How to work on this
 
 - **Report what you actually ran, not what you expect to work.** This was the
   standing instruction from the start and it caught several things that "should"
