@@ -1,52 +1,109 @@
 # Project state
 
-Written 2026-10-11. A handover note: where the project stands, what the code
-assumes, and what is worth doing next. The README is the user-facing document;
-this one is for whoever picks the work up.
+Written 2026-10-12. This is a handover note: enough to pick the work up cold,
+in a new session, with no memory of how any of it got here. The README is the
+document for someone who wants to *play* it; this one is for someone who wants
+to *change* it.
 
-## What this is
+---
+
+## 1. What this is
 
 A durable text adventure whose save file is a Dapr Workflow history on Diagrid
-Catalyst, playable three ways from one engine:
+Catalyst. There is no database and no file on disk: the workflow's history *is*
+the save, because the game state is a deterministic replay of the ordered
+`player_command` events in it.
 
-| Front end | Entry point | Needs a tunnel |
+One engine, three front ends:
+
+| Front end | Run it with | Tunnel |
 | --- | --- | --- |
-| Terminal (workflow) | `uv run dungeon-master-workflow` | no |
-| Terminal (agent, LangGraph) | `uv run dungeon-master-agent` | yes |
-| ESP32 Cheap Yellow Display | `dungeon_master.bridge.server` + `firmware/cyd` | no (the board calls the bridge over wifi) |
+| Terminal, workflow | `uv run dungeon-master-workflow` | no |
+| Terminal, agent (LangGraph) | `make serve-agent` then `make play-agent` | yes |
+| ESP32 Cheap Yellow Display | bridge + `firmware/cyd` | no (the board calls the bridge over wifi) |
 
-- Repo: <https://github.com/msfussell/dungeon-master> — **still private**, 18 commits, 61 files.
-- Catalyst: project `dungeon-master`, App `dungeon-master`, Agent `dungeon-master-agent`.
-- Licence: Apache-2.0, "Copyright 2026 Mark Fussell".
+- Code: `/Users/markfussell/dev/src/catalyst/dungeon-master`
+- GitHub: <https://github.com/msfussell/dungeon-master> — **still private**
+- Licence: Apache-2.0, "Copyright 2026 Mark Fussell" (holder not yet settled)
 
-## Live right now
+## 2. Run it
 
-- Bridge running locally on port 8080 (pids 14896/14898). It hosts **both** the
-  HTTP server for the device and the workflow worker, so killing it takes the
-  worker with it.
-- `cyd-1-5` — running, the device's current adventure, shared with a terminal.
-- `mark-play` — running, a terminal-only adventure, parked where it was left.
-- `new-fork` — running, a leftover from testing `workflow rerun`; safe to purge.
-- `cyd-1-1` — completed, **found the secret vault**. The one history worth keeping.
-- `cyd-1-2`, `cyd-1-3` completed; `cyd-1-4` terminated to let the device move to `cyd-1-5`.
+```sh
+cd /Users/markfussell/dev/src/catalyst/dungeon-master
 
-## Done recently
+make test          # engine rules, 400 replay walks. No Catalyst, no key, ~1s
+make leakcheck     # proves nothing readable gives the secret away
 
-- `scripts/fork` — lists a run's decision points (each typed command paired with
-  the event id to branch from) and forks one with `diagrid workflow rerun`.
-- The CLI no longer recycles a played instance id. It refuses, names what is
-  there, warns when that run found the vault, and offers: read it, play on at the
-  next free id, branch it, or `--new` to overwrite deliberately.
-- `prompt_or_watch` — the CLI polls the run while idle at the prompt instead of
-  blocking in `input()`, so a move made on the device redraws the terminal under
-  `(the other screen moved)`.
-- The device polls `GET /scene?slot=&since=` every 3s and redraws when the run
-  moved elsewhere, so the two screens now track each other in both directions.
-  Overlays (map, "more") carry a negative `seq` and are never polled away.
-- The run id is visible on both screens: in the CLI prompt (`cyd-1-5 > `) and in
-  the HUD of the device's map screen (tap the title bar).
+uv sync --extra workflow        # the two front ends CANNOT share a venv (see 5.20)
+make play-workflow             # the terminal game
+uv run dungeon-master-workflow --instance <id>    # join a specific adventure
 
-## Assumptions the code makes
+uv run --extra workflow python -m dungeon_master.bridge.server   # the device bridge
+./scripts/fork <instance>      # list a run's branch points; add an event id to fork
+./scripts/reset selftest-      # purge runs by prefix (starts a worker first)
+./scripts/refresh-connection   # prints how to regenerate .env.workflow / .env.agent
+```
+
+Device firmware (board on `/dev/cu.usbserial-210`, a CH340):
+
+```sh
+cd firmware/cyd && pio run --target upload --upload-port /dev/cu.usbserial-210
+pio device monitor -p /dev/cu.usbserial-210 -b 115200     # taps log as [tap]
+```
+
+**Which changes need which rebuild.** Scene text, buttons, both HUD lines, the
+map and all layout are composed *by the bridge*: restart it, no reflash. Art,
+touch, calibration, wifi and the poll interval are firmware: reflash over USB.
+
+## 3. Live state, 2026-10-12
+
+- **Bridge** running on port 8080, pids 28235/28237. It hosts the HTTP server
+  **and** the workflow worker, so killing it takes the worker with it, and every
+  adventure loses its ability to start, terminate, purge or rerun until it is back.
+- **Device** is slot `cyd-1`, currently on adventure `cyd-1-9`, and is polling
+  from `192.168.0.18` — 14,104 polls in the log, so the background poll works in
+  the field and not only in tests.
+- **`mark-play`** — running, a terminal-only adventure, parked mid-game.
+- **`cyd-1-1` … `cyd-1-8`** — completed, and **every one of them found the secret
+  vault**. `cyd-1-4` was terminated deliberately to let the device move on.
+- `new-fork` — a leftover from testing `workflow rerun`. Safe to purge.
+
+## 4. Where everything is
+
+```
+dungeon_master/
+  __init__.py        loads .env, .env.workflow, .env.agent BEFORE dapr (see 5.2)
+  engine/            PURE. No clock, network, RNG or Catalyst. The rules live here.
+    world.py         9 rooms on a 3x4 coord grid, prose, facts, verbatim lines
+    engine.py        parse, move, apply_choice, upkeep, rest refusals, hud
+    ui.py            terminal rendering, colour, spinner
+    leakcheck.py     enumerates every reachable string and proves the secret is safe
+  workflow/          front end 1: the orchestrator IS the save file
+    workflow.py      the whole game loop; wait_for_external_event + create_timer
+    activities.py    narrate_scene, enter_room, secret_vault_found, campfire_event...
+    narrator.py      optional LLM prose; written prose is the floor, not a fallback
+    cli.py           the terminal client: prompt_or_watch, render, refusals
+    history.py       reads run history via the diagrid CLI for the end-of-run timeline
+    worker.py        worker only, no game
+  agent/             front end 2: LangGraph through diagrid[langgraph]
+    graph.py         load -> interpret -> act -> narrate -> save
+    aux_workflows.py the two things a graph node cannot do: a named step, a timer
+  bridge/            front end 3: HTTP for the board + a hosted worker
+    server.py        /ping, /scene[&since=], /command; slot->instance; fog-of-war map
+    layout.py        MEASURED constants for 240x320. Do not guess these.
+firmware/cyd/        PlatformIO, ESP32-2432S028R
+  src/main.cpp       self-test, calibration, drawScene/drawMap, touch, the 3s poll
+  src/touch.h        bit-banged XPT2046 (the registry library does not work, see 5.24)
+  src/art.h          dungeon entrance on boot, dragon in the vault
+  src/dragon_sprite.h  72x65, 585 bytes, converted from dragon1.png
+  include/secrets.h  GITIGNORED: wifi, bridge host/port, GAME_SLOT
+tools/fork.py        fork point lister + rerun wrapper
+tools/png2sprite.py  PNG -> 1-bit sprite, auto-cropped to ink, ASCII preview
+prompts/             the two shareable prompts, and both QR-sized versions
+issue-drafts/        the six upstream issues as filed
+```
+
+## 5. Assumptions the code makes
 
 Breaking any of these looks like a platform bug and is not one.
 
@@ -54,98 +111,154 @@ Breaking any of these looks like a platform bug and is not one.
 
 1. Every client acts as App ID `dungeon-master`, because they all load
    `.env.workflow`. A different identity **cannot see the instance at all** —
-   this is what caused the agent front end's rest-polling 404s.
-2. `dungeon_master/__init__.py` loads `.env`, `.env.workflow`, `.env.agent`
-   with `override=False` **before** dapr is imported. Dapr snapshots `DAPR_*` at
-   import time (dapr/python-sdk#1259). Moving that import breaks the connection.
-3. An `https://` gRPC endpoint is rewritten to `host:port?tls=true` in the same file.
+   this caused the agent front end's rest-polling 404s.
+2. `dungeon_master/__init__.py` loads the env files **before** dapr is imported.
+   Dapr snapshots `DAPR_*` at import time (dapr/python-sdk#1259). Move that
+   import and the connection breaks in a way that looks like bad credentials.
+3. An `https://` gRPC endpoint is rewritten to `host:port?tls=true` there too.
+4. `.env` holds `DM_PROJECT`, `DM_REST_SECONDS`, `OPENAI_API_KEY` and **no
+   `DAPR_*`** — `diagrid dev run` injects those and must not be overridden.
 
-**Runs, slots and history**
+**Runs, slots, history**
 
-4. The instance id **is** the save file. Nothing else is persisted anywhere.
-5. A terminal instance id is never reused. Dapr allows it; this game treats it as
-   data loss, in both the CLI and the bridge.
-6. A slot is not an instance. The device's slot (`cyd-1`) resolves to numbered
-   adventures `cyd-1-N`; a bare running instance named exactly the slot is adopted
-   for boards that were mid-game before numbering existed.
-7. The device's slot comes from its eFuse MAC unless `GAME_SLOT` is set in
-   `firmware/cyd/include/secrets.h`. That file is gitignored, as are all `.env*`.
-8. **A worker must be connected** for start, terminate, purge and rerun. They go
-   through the app, not around it.
-9. `purge` needs the run finished — terminate first. `purge`/`terminate` take
-   `--instance-id <id>`; `get` takes the id positionally.
-10. `diagrid workflow get` returns history **newest first**, and `-o json`
-    produces an empty file, so `scripts/fork` parses YAML and reverses it.
-11. `catalyst_rerun_workflow_run` and `catalyst_terminate_workflow_run` over MCP
+5. The instance id **is** the save file. Nothing else is persisted.
+6. A terminal instance id is never reused. Dapr allows it; this game treats it
+   as data loss, in both the CLI (it refuses) and the bridge (it numbers).
+7. A slot is not an instance. The device's slot `cyd-1` resolves to `cyd-1-N`;
+   a bare running instance named exactly the slot is adopted, for boards that
+   were mid-game before numbering existed.
+8. The device's slot derives from its eFuse MAC unless `GAME_SLOT` is set in
+   `firmware/cyd/include/secrets.h`. So four boards take four adventures from
+   one build.
+9. **A worker must be connected** for start, terminate, purge and rerun.
+10. `purge` needs the run finished — terminate first. `purge`/`terminate` take
+    `--instance-id <id>`; `get` takes the id positionally.
+11. `diagrid workflow get` returns history **newest first**, and `-o json`
+    writes an empty file, so `tools/fork.py` parses YAML and reverses it.
+12. A player decision appears in history as `EventRaised`/`player_command` with
+    `input: {"command": "..."}`; the adjacent `TaskScheduled` carries the
+    `eventId` to fork from.
+13. `catalyst_rerun_workflow_run` and `catalyst_terminate_workflow_run` over MCP
     return `HTTP 500 unexpected end of JSON input` where the CLI works
     (diagridio/catalyst-ai#65). Use the CLI for both.
-12. At data-sharing level `metadata`, `input`, `output` and `customStatus` are
-    **withheld, not empty**, over the MCP tools.
+14. At data-sharing level `metadata`, `input`, `output` and `customStatus` are
+    **withheld, not empty**, over the MCP tools. Never report that as "no output".
 
 **Determinism**
 
-13. The orchestrator has no clock, no RNG, no I/O and no env reads. Time comes
-    from `ctx.current_utc_datetime`; randomness is rolled in an activity and only
-    its result is applied.
-14. `rest_seconds` arrives in the workflow **input**, so it is pinned in history
+15. The orchestrator has no clock, no RNG, no I/O and no env reads. Time is
+    `ctx.current_utc_datetime`; randomness is rolled in an activity and only the
+    result is applied.
+16. `rest_seconds` arrives in the workflow **input**, so it is pinned in history
     and cannot drift when `.env` changes mid-rest.
-15. `seq` counts publishes, so it is a pure function of the command sequence and
-    is stable across replay. Both clients use it to decide when to redraw.
+17. `seq` counts publishes, so it is a pure function of the command sequence and
+    stable across replay. Both clients use it to decide when to redraw, and the
+    device sends it as `&since=`.
+18. Overlays (map, "more") carry a **negative** `seq`. The device uses that to
+    suppress polling, or a poll would replace the map three seconds after it opened.
 
 **The secret, and the narrator**
 
-16. `verbatim` lines never reach `narrator.py`. A model shown a rule explains it
+19. `verbatim` lines never reach `narrator.py`. A model shown a rule explains it
     away and then invents the event it thinks the rule implies.
-17. The door's reason is not in any prompt, and the prompt forbids speculating
-    about motives. `make leakcheck` proves nothing readable gives it away.
-18. The game is fully playable with **no API key**. Written prose is the baseline,
-    not a degraded mode; any provider error falls through silently.
-19. The map is fog of war. It never shows the vault before the door is open, or
-    the layout would replace both exploration and the lodestone.
+20. The door's reason is in no prompt, and the prompt forbids speculating about
+    motives. `make leakcheck` proves it over every reachable string.
+21. The game is fully playable with **no API key**. Written prose is the
+    baseline; any provider error falls through to it silently.
+22. The map is fog of war and omits the vault entirely until the door is open.
 
 **Environments and the device**
 
-20. The two front ends cannot share one virtualenv — `diagrid[langgraph]` pins
-    `pydantic==2.10.5`. They are declared as conflicting extras; `uv sync
-    --extra workflow` or `--extra agent`.
-21. The engine has no dependencies beyond the standard library, so `make test`
+23. The two front ends cannot share a venv: `diagrid[langgraph]` pins
+    `pydantic==2.10.5` and the workflow front end needs newer. Declared as
+    conflicting extras in `pyproject.toml`; `uv sync --extra workflow|agent`.
+24. The engine has no dependencies beyond the standard library, so `make test`
     and `make leakcheck` need neither Catalyst nor a key.
-22. Screen layout constants in `bridge/layout.py` are **measured**, not guessed:
-    240x320, 34 columns at ~6.3px per character, and the HUD must stay under ~34
-    characters or it is cut off.
-23. Scene text, buttons and both HUD lines are composed **by the bridge**, so most
-    presentation changes need a bridge restart and no reflash. Art, calibration
-    and touch handling are in the firmware and do need USB.
-24. The touch driver is bit-banged in `firmware/cyd/src/touch.h`. The registry's
-    `XPT2046_Touchscreen` is a 2019 alpha with no `begin(SPIClass&)` and does not
-    work here. Calibration is `TS_MINX=1932, TS_MAXX=209, TS_MINY=101,
-    TS_MAXY=1886, TS_SWAP=false`.
+25. `bridge/layout.py` constants are **measured**: 240x320, 34 columns at
+    ~6.3px/char, HUD under ~34 characters or it is cut off.
+26. The touch driver is bit-banged in `firmware/cyd/src/touch.h`. The registry's
+    `XPT2046_Touchscreen` is a 2019 alpha with no `begin(SPIClass&)`.
+    Calibration: `TS_MINX=1932, TS_MAXX=209, TS_MINY=101, TS_MAXY=1886,
+    TS_SWAP=false`.
+27. `HTTPClient::setTimeout` takes a `uint16_t`, so 65.5s is the ceiling — a
+    campfire rest longer than that cannot be waited out in one POST.
+28. The board is **2.4GHz only**. The Mac's LAN address goes in `secrets.h` as
+    `BRIDGE_HOST`; if the Mac's IP changes, the board needs a reflash.
 
-## Next steps
+## 6. Two screens, one adventure
 
-Roughly in the order I would do them.
+Both clients only raise `player_command` events and read custom status, so any
+number of them can hold one run. The instance id is the whole handshake, and
+both must act as the same App ID.
 
-1. **Decide the licence holder** — "Mark Fussell" or "Diagrid Inc." — before the
-   repo goes public. One line in `LICENSE`.
+- The **CLI** polls while idle at the prompt (`prompt_or_watch`) and redraws
+  under `(the other screen moved)`.
+- The **device** polls `GET /scene?slot=<slot>&since=<seq>` every 3s. The bridge
+  answers `{"nochange": true}` almost always, a full screen when the run moved.
+- That poll never *starts* an adventure (`start_new_if_finished=False`), or it
+  would wipe the ending screen and open a fresh dungeon seconds after a win. A
+  tap is allowed to start one; a poll is not.
+- The run id shows in the CLI prompt (`cyd-1-9 > `) and in the HUD of the
+  device's map screen (tap the title bar). Same string means same adventure.
+- It is a shared controller, not two players: commands are consumed in history
+  order, so if both press `1` the second is told that is not something it can do.
+
+## 7. Catalyst
+
+- Project `dungeon-master`; App `dungeon-master`; Agent `dungeon-master-agent`
+  (port 5001, needs `diagrid dev run`, and the flag is `--app-id`, not `--id`).
+- Console: `https://catalyst.diagrid.io/workflows/dungeon-master/<runId>?project=dungeon-master`.
+  Name goes in `?project=`, numeric uid in `?projectId=` — the wrong one
+  silently falls back to the default project.
+- Right after `serve-agent` starts, the first command can fail with "app is not
+  in a healthy state" because Catalyst health-checks `GET /` and the adapter
+  404s it. It settles by itself.
+
+## 8. Upstream issues this shook out
+
+[dapr/python-sdk#1259](https://github.com/dapr/python-sdk/issues/1259),
+[diagridio/python-ai#429](https://github.com/diagridio/python-ai/issues/429)
+(with a tested patch),
+[#430](https://github.com/diagridio/python-ai/issues/430),
+[#431](https://github.com/diagridio/python-ai/issues/431),
+[diagridio/catalyst-ai#64](https://github.com/diagridio/catalyst-ai/issues/64),
+[#65](https://github.com/diagridio/catalyst-ai/issues/65).
+Full drafts in `issue-drafts/`.
+
+## 9. Next steps
+
+1. **Settle the licence holder** — "Mark Fussell" or "Diagrid Inc." — one line
+   in `LICENSE`, before the repo goes public.
 2. **Make the repo public**: `gh repo edit msfussell/dungeon-master --visibility public`.
-   Check `.gitignore` still covers `.env*` and `firmware/cyd/include/secrets.h`
-   first; the history has never held a secret and should stay that way.
-3. **Purge the test leftovers** — `new-fork`, and `mark-play` once it is finished
-   with. Keep `cyd-1-1`.
-4. **Flash the other three boards.** Slots derive from the chip, so they will take
-   their own adventures with no per-board build. This is untested on more than one
-   board.
-5. **Run the bridge as its own process from the worker**, or accept that restarting
-   the bridge drops the worker for everyone. Fine for a booth, wrong for a demo
-   where someone else is mid-game.
-6. **`POST /attach?slot=<slot>&instance=<id>`** on the bridge, so a board can join
-   an arbitrarily-named run without a reflash. Today a shared run has to be named
-   `cyd-1-N` for the device to find it.
-7. **Pub/sub between the boards** — one adventure visible on four screens, or four
-   adventures that can see each other. The project has one managed pub/sub;
-   separate the boards by topic.
-8. **Workflow history signing.** `enableWorkflowHistorySigning` is creation-only,
-   so this needs a new project — worth it if the booth claim ("show this run")
-   should be tamper-evident.
-9. **Add rerun's 500 to diagridio/catalyst-ai#65**, which currently only covers
-   terminate.
+   Check `.gitignore` still covers `.env*` and `firmware/cyd/include/secrets.h`;
+   no secret has ever been committed and it should stay that way.
+3. **Back the device poll off when idle.** 14,104 polls are 14,104
+   `get_workflow_state` calls against Catalyst, and four boards would be four
+   times that. Suggested: 3s for a minute after any activity, then 10-15s.
+   `POLL_MS` in `firmware/cyd/src/main.cpp` (firmware change, so a reflash).
+4. **Purge the leftovers** — `new-fork`, and `mark-play` when it is finished
+   with. Keep every `cyd-1-N`: they all found the vault.
+5. **Flash the other three boards.** Slots derive from the chip, so no per-board
+   build is needed. Untested on more than one board.
+6. **Split the worker out of the bridge**, or accept that restarting the bridge
+   drops the worker for every adventure. Fine on a desk, wrong at a booth.
+7. **`POST /attach?slot=<slot>&instance=<id>`** on the bridge, so a board can
+   join an arbitrarily-named run. Today a shared run must be named `cyd-1-N` for
+   the device to find it, which is why `mark-play` could not be joined.
+8. **Pub/sub between the boards** — one adventure on four screens, or four that
+   can see each other. The project has one managed pub/sub; separate by topic.
+9. **Workflow history signing.** `enableWorkflowHistorySigning` is creation-only,
+   so it needs a new project — worth it if "show this run to the booth" should
+   be tamper-evident.
+
+## 10. How to work on this
+
+- **Report what you actually ran, not what you expect to work.** This was the
+  standing instruction from the start and it caught several things that "should"
+  have worked: the MCP rerun 500, `-o json` returning empty, purge refusing a
+  live run. Prove durability with timestamps, not with assertions.
+- Spike an unknown before porting code onto it.
+- Keep answers short. Give the command, not the tour.
+- `make test` and `make leakcheck` are fast and need nothing. Run them after any
+  engine change.
+- Keep this file current. It is the handoff.
