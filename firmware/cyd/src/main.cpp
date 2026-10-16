@@ -112,6 +112,23 @@ static void probe(const char *what, bool ok, const char *detail = "") {
 
 static bool connectWifi() {
   WiFi.mode(WIFI_STA);
+  // "wifi FAIL" alone does not say whether the network is missing, the key is
+  // wrong, or the router wants WPA3 only. The scan and the disconnect reason
+  // do: 201 = SSID not seen, 15/204 = handshake failed (usually the password),
+  // 202 = auth refused.
+  int n = WiFi.scanNetworks();
+  bool seen = false;
+  for (int i = 0; i < n; i++) {
+    if (WiFi.SSID(i) == WIFI_SSID) {
+      seen = true;
+      Serial.printf("[wifi] found %s rssi=%d ch=%d auth=%d\n", WIFI_SSID,
+                    WiFi.RSSI(i), WiFi.channel(i), (int)WiFi.encryptionType(i));
+    }
+  }
+  if (!seen) Serial.printf("[wifi] %s not in scan (%d networks seen)\n", WIFI_SSID, n);
+  WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info) {
+    Serial.printf("[wifi] disconnected, reason %d\n", info.wifi_sta_disconnected.reason);
+  }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   for (int i = 0; i < 60 && WiFi.status() != WL_CONNECTED; i++) {
     delay(500);
