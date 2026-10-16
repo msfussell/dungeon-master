@@ -1,6 +1,6 @@
 # Project state
 
-Written 2026-10-12. This is a handover note: enough to pick the work up cold,
+Written 2026-10-12, updated 2026-10-15. This is a handover note: enough to pick the work up cold,
 in a new session, with no memory of how any of it got here. The README is the
 document for someone who wants to *play* it; this one is for someone who wants
 to *change* it.
@@ -55,18 +55,21 @@ pio device monitor -p /dev/cu.usbserial-210 -b 115200     # taps log as [tap]
 map and all layout are composed *by the bridge*: restart it, no reflash. Art,
 touch, calibration, wifi and the poll interval are firmware: reflash over USB.
 
-## 3. Live state, 2026-10-12
+## 3. Live state, 2026-10-15
 
-- **Bridge** running on port 8080, pids 28235/28237. It hosts the HTTP server
-  **and** the workflow worker, so killing it takes the worker with it, and every
-  adventure loses its ability to start, terminate, purge or rerun until it is back.
-- **Device** is slot `cyd-1`, currently on adventure `cyd-1-9`, and polls from
-  its own address on the LAN — 14,104 polls in the log, so the background poll
-  works in the field and not only in tests.
+- **Network** is now the Beryl AX travel router (GL-MT3000), not the home
+  router. Laptop and board both on its 2.4GHz SSID, `192.168.8.x`. The laptop's
+  address is what `BRIDGE_HOST` holds; reserve it on the router (see BOOTH.md).
+- **Bridge** running on port 8080, pids 97880/97881, started 2026-10-15 with the
+  scene cache. It hosts the HTTP server **and** the workflow worker, so killing
+  it takes the worker with it, and every adventure loses its ability to start,
+  terminate, purge or rerun until it is back.
+- **Device** is slot `cyd-1`, still on adventure `cyd-1-9` (now in the
+  Reliquary), reflashed for the Beryl and polling cleanly.
 - **`mark-play`** — running, a terminal-only adventure, parked mid-game.
 - **`cyd-1-1` … `cyd-1-8`** — completed, and **every one of them found the secret
   vault**. `cyd-1-4` was terminated deliberately to let the device move on.
-- `new-fork` — a leftover from testing `workflow rerun`. Safe to purge.
+- `new-fork` — gone; no longer in the run list.
 
 ## 4. Where everything is
 
@@ -183,7 +186,18 @@ Breaking any of these looks like a platform bug and is not one.
 27. `HTTPClient::setTimeout` takes a `uint16_t`, so 65.5s is the ceiling — a
     campfire rest longer than that cannot be waited out in one POST.
 28. The board is **2.4GHz only**. The Mac's LAN address goes in `secrets.h` as
-    `BRIDGE_HOST`; if the Mac's IP changes, the board needs a reflash.
+    `BRIDGE_HOST`; if the Mac's IP changes, the board needs a reflash. When the
+    board says "is the bridge running?", check which network the **Mac** is on
+    first — twice now the board was fine and the Mac had changed networks.
+29. The bridge remembers the last real screen per slot (`_last_screen`). If
+    Catalyst can't be reached, a poll answers `nochange`, and a scene request
+    or a tap gets that last screen with `stale: true`; it returns 503 only when
+    nothing is cached. This hides a brief uplink drop. It does not make the
+    game work offline, because every turn still needs Catalyst.
+30. On a failed join the firmware logs a scan line (`[wifi] found <ssid> rssi ch
+    auth`) and the disconnect reason. 15 or 204 usually means a wrong password,
+    201 means the SSID wasn't found, and 202 means authentication was refused.
+    In practice a wrong password on the Beryl came back as reason 2.
 
 ## 6. Two screens, one adventure
 
@@ -227,6 +241,8 @@ Full drafts in `issue-drafts/`.
 
 ## 9. Next steps
 
+0. **Booth prep** — follow `BOOTH.md`. Reserve the laptop's address on the
+   Beryl, flash the other boards, and do a dry run on the phone uplink only.
 1. **Back the device poll off when idle.** 14,104 polls are 14,104
    `get_workflow_state` calls against Catalyst, and four boards would be four
    times that. Suggested: 3s for a minute after any activity, then 10-15s.

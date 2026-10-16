@@ -62,6 +62,8 @@ prompts/       the build prompts, full and QR-sized
 scripts/       refresh-connection, serve-agent, reset
 ```
 
+Running the device edition at an event: see [BOOTH.md](BOOTH.md).
+
 `engine/` has no clock, no network, no global RNG and no Catalyst in it. That
 is what lets both front ends share it, what lets 400 randomised playthroughs
 run in a second, and what means a rules fix lands once instead of twice.
