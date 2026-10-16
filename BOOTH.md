@@ -24,7 +24,13 @@ cannot click "I agree"), or are 5GHz only (the board is 2.4GHz only).
       first, or the MAC can rotate and the reservation stops matching.
 - [ ] Every board flashed from the same build. Slots derive from each chip, so
       no per-board build. Each one shows `wifi ok` then `bridge ok`.
-- [ ] Dry run at home on the phone uplink only, with the home network unplugged.
+- [ ] Laptop auto-joins **only** the router. System Settings → Wi-Fi → Details
+      → Auto-Join off for every other known network. Otherwise, the moment the
+      router loses its uplink, the laptop jumps to another network and every
+      board says "is the bridge running?".
+- [ ] Dry run at home on the phone uplink only, with the home network out of
+      the path. Check with `curl -s https://ipinfo.io/org`: it should name the
+      mobile carrier, not the home ISP.
 - [ ] `DM_REST_SECONDS` in `.env` under 60. A longer rest outlasts the board's
       request timeout (`HTTPClient::setTimeout` is a `uint16_t`).
 
@@ -35,8 +41,16 @@ hub or battery for them, a phone cable for tethering, the laptop charger.
 
 1. **Power the router.** The laptop rejoins its network on its own.
 2. **Give the router an uplink.** `http://192.168.8.1` → **Internet**:
-   - **Tethering** (recommended): phone into the router's USB-A port, Personal
-     Hotspot on. Independent of the venue and of any captive portal.
+   - **Phone** (recommended), either way:
+     - *USB tethering*: phone into the router's USB-A port with a **data**
+       cable, then Personal Hotspot (iPhone) or USB tethering (Android) on.
+       On Android the option is grayed out until the phone sees a data
+       connection — a charge-only cable looks exactly like that.
+     - *Phone hotspot + Repeater*: no cable needed. Hotspot on, router →
+       Repeater → join the phone. Turn **Wi-Fi off on the phone**, or some
+       Android phones share the Wi-Fi they're on instead of mobile data.
+
+     Independent of the venue and of any captive portal.
    - **Repeater**: join the venue Wi-Fi. If it has a captive portal, open any
      page on the laptop to accept it once. The Beryl can repeat 5GHz.
    - **Ethernet** into the WAN port, if the booth has a drop.
@@ -56,14 +70,18 @@ hub or battery for them, a phone cable for tethering, the laptop charger.
    ```
    `upstream unavailable` from `/scene` means the uplink, not the board.
 6. **Power the boards.** Each shows `wifi ok`, `bridge ok`, then its scene.
+   Boards go on **last**: changing the router's uplink restarts its Wi-Fi, and a
+   board that drops off may not rejoin by itself. If you change the uplink
+   during the day, power-cycle the boards afterwards.
 
 ## When something breaks
 
 | Board shows | Meaning | Fix |
 |---|---|---|
 | `wifi FAIL` / "check 2.4GHz SSID" | Can't join the router | Check the router is up. Do not reflash. The serial log prints a reason code: 15/204 is usually the password, 201 the SSID not seen. |
-| "is the bridge running?" | Joined, but can't reach the laptop | Laptop on the router's network? Bridge running (step 4)? |
-| Taps do nothing, screen holds | The uplink dropped | Router → Internet; switch to tethering. The bridge serves the last screen until Catalyst answers again. |
+| "is the bridge running?" | Joined, but can't reach the laptop | Check the **laptop's** Wi-Fi first: it is usually on another network. Then: bridge running (step 4)? |
+| Board on nothing after an uplink change | The router restarted its Wi-Fi and the board didn't rejoin | Power-cycle the board. |
+| Taps do nothing, screen holds | The uplink dropped | Router → Internet; switch to the phone. The bridge serves the last screen until Catalyst answers again. |
 
 ## Two rules for the day
 
