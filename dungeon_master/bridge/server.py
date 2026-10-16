@@ -56,6 +56,11 @@ _lock = threading.Lock()
 _instance: dict[str, str] = {}
 # Last full prose per slot, so a "more" tap does not cost a turn.
 _full_prose: dict[str, list[str]] = {}
+# Last full screen served per slot. When Catalyst cannot be reached this is
+# served instead of an error: at a booth a two-second blip would otherwise put
+# "is the bridge running?" on the board, which is alarming and, since the
+# bridge is fine, untrue. The uplink is the one thing a booth cannot promise.
+_last_screen: dict[str, dict] = {}
 
 
 def _start_worker():
@@ -156,6 +161,11 @@ def _screen(slot: str, scene: dict, ended: bool = False) -> dict:
         "ended": bool(ended or scene.get("ended")),
         "slot": slot,
     })
+    # Only real screens are remembered. The map and the "more" overlay build
+    # their own dicts and carry a negative seq (see the device poll), and
+    # re-serving one of those after a blip would be a stranger thing to show
+    # than the room the player is standing in.
+    _last_screen[slot] = out
     return out
 
 
@@ -365,6 +375,67 @@ def _do_command(slot: str, key: str) -> dict:
     return _screen(slot, scene, ended=output is not None)
 
 
+def _stale(slot: str) -> dict | None:
+    """The last screen served to this slot, flagged.
+
+    The board ignores `stale` -- ArduinoJson drops keys it was not asked for --
+    so the flag is for the log and for any firmware that later wants to show a
+    dot. What matters here is that the glass keeps the screen it had.
+    """
+    last = _last_screen.get(slot)
+    if last is None:
+        return None
+    out = dict(last)
+    out["stale"] = True
+    return out
+
+
+def _poll_or_hold(slot: str, since: int) -> tuple[dict, int]:
+    """The background poll. A failure here must be invisible.
+
+    If Catalyst cannot be read we do not know whether the adventure moved, and
+    `nochange` is the answer that keeps the board exactly as it is. It polls
+    again in three seconds; a blip shorter than that is never seen by anyone.
+    """
+    try:
+        return _poll(slot, since), 200
+    except Exception:
+        log.warning("poll failed for %s; answering nochange", slot, exc_info=True)
+        return {"nochange": True}, 200
+
+
+def _scene_or_last(slot: str) -> tuple[dict, int]:
+    """A full screen request: the board booting, or coming back from an overlay."""
+    try:
+        return _ensure_run(slot), 200
+    except Exception:
+        last = _stale(slot)
+        log.warning("scene failed for %s; serving %s", slot,
+                    "last known screen" if last else "503", exc_info=True)
+        if last is not None:
+            return last, 200
+        return {"error": "upstream unavailable"}, 503
+
+
+def _command_or_last(slot: str, key: str) -> tuple[dict, int]:
+    """A tap. On failure the honest answer is the screen before it.
+
+    The turn did not land, so the previous screen *is* the current state: the
+    player sees nothing moved and taps again. In the one case where the event
+    reached Catalyst and only the wait for the result failed, the background
+    poll corrects the screen within three seconds.
+    """
+    try:
+        return _do_command(slot, key), 200
+    except Exception:
+        last = _stale(slot)
+        log.warning("command %r failed for %s; serving %s", key, slot,
+                    "last known screen" if last else "503", exc_info=True)
+        if last is not None:
+            return last, 200
+        return {"error": "upstream unavailable"}, 503
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -385,15 +456,19 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(u.query)
             slot = (q.get("slot") or ["cyd-1"])[0]
             since = (q.get("since") or [None])[0]
-            with _lock:
+            if since is not None:
+                try:
+                    n = int(since)
+                except (ValueError, TypeError):
+                    self._send({"error": "bad since"}, 400)
+                    return
                 # `since` makes it a poll: cheap, and it never starts a run.
-                if since is not None:
-                    try:
-                        self._send(_poll(slot, int(since)))
-                    except (ValueError, TypeError):
-                        self._send({"error": "bad since"}, 400)
-                else:
-                    self._send(_ensure_run(slot))
+                with _lock:
+                    body, code = _poll_or_hold(slot, n)
+            else:
+                with _lock:
+                    body, code = _scene_or_last(slot)
+            self._send(body, code)
             return
         self._send({"error": "not found"}, 404)
 
@@ -409,7 +484,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         slot = str(req.get("slot") or "cyd-1")
         with _lock:
-            self._send(_do_command(slot, str(req.get("k") or "")))
+            body, code = _command_or_last(slot, str(req.get("k") or ""))
+        self._send(body, code)
 
     def log_message(self, fmt, *args):
         log.info("%s %s", self.address_string(), fmt % args)
