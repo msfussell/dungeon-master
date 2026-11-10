@@ -44,6 +44,7 @@ RECAP = "\033[1;3;38;5;189m"
 WIN = "\033[1;38;5;121m"
 LOSE = "\033[1;38;5;203m"
 LINK = "\033[4;38;5;117m"
+PROMPT = "\033[1;38;5;229m"   # the "your turn" cue, brighter than anything above it
 
 WIDTH = 78
 
@@ -94,6 +95,23 @@ def wrap(text: str, width: int = WIDTH, indent: str = "") -> str:
     if cur:
         lines.append(" ".join(cur))
     return ("\n" + indent).join(lines)
+
+
+PROMPT_MARK = "▸ Type your input:"
+PROMPT_HINT = "type a menu number, or a command in your own words"
+
+
+def input_prompt(hint: bool = False) -> str:
+    """The line the player types on, marked so it cannot be mistaken for output.
+
+    Without it the cursor just sits under the HUD, and a player who has not
+    seen the game before cannot tell whether it is still thinking or waiting
+    on them. `hint` adds what to type; pass it on the first prompt only, since
+    a fixed instruction repeated every turn is wallpaper by turn three.
+    """
+    lines = ["", c(DIM, f"  ({PROMPT_HINT})")] if hint else [""]
+    lines.append(c(PROMPT, f"{PROMPT_MARK} "))
+    return "\n".join(lines)
 
 
 def rule_line(char: str = "─") -> str:
