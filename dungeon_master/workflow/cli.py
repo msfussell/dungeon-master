@@ -250,8 +250,8 @@ def _next_free(client: wf.DaprWorkflowClient, instance_id: str) -> str:
     return f"{base}-new"
 
 
-def prompt_or_watch(client: wf.DaprWorkflowClient, instance_id: str,
-                    scene: dict, hint: bool = False) -> tuple[str | None, dict, dict | None]:
+def prompt_or_watch(client: wf.DaprWorkflowClient, instance_id: str, scene: dict,
+                    hint: bool = False) -> tuple[str | None, dict, dict | None]:
     """Read a command, while watching the run for moves made on another screen.
 
     This used to be a bare input(), which made the CLI deaf: the adventure is a
@@ -402,9 +402,9 @@ def _play(client: wf.DaprWorkflowClient, instance_id: str, rest_seconds: int, fo
 
         try:
             raw, scene, output = prompt_or_watch(client, instance_id, scene, hint=first_prompt)
-            first_prompt = False
             if raw is None:
                 continue  # the run moved elsewhere; redraw rather than send
+            first_prompt = False
         except (EOFError, KeyboardInterrupt):
             print()
             print(ui.c(ui.DIM, "Left where you stand. The run is still open; start the app "

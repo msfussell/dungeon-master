@@ -48,6 +48,9 @@ PROMPT = "\033[1;38;5;229m"   # the "your turn" cue, brighter than anything abov
 
 WIDTH = 78
 
+PROMPT_MARK = "▸ Type your input:"
+PROMPT_HINT = "type a menu number, or a command in your own words"
+
 
 def _no_colour() -> bool:
     import os
@@ -95,10 +98,6 @@ def wrap(text: str, width: int = WIDTH, indent: str = "") -> str:
     if cur:
         lines.append(" ".join(cur))
     return ("\n" + indent).join(lines)
-
-
-PROMPT_MARK = "▸ Type your input:"
-PROMPT_HINT = "type a menu number, or a command in your own words"
 
 
 def input_prompt(hint: bool = False) -> str:
