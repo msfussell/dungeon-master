@@ -250,8 +250,8 @@ def _next_free(client: wf.DaprWorkflowClient, instance_id: str) -> str:
     return f"{base}-new"
 
 
-def prompt_or_watch(client: wf.DaprWorkflowClient, instance_id: str,
-                    scene: dict) -> tuple[str | None, dict, dict | None]:
+def prompt_or_watch(client: wf.DaprWorkflowClient, instance_id: str, scene: dict,
+                    hint: bool = False) -> tuple[str | None, dict, dict | None]:
     """Read a command, while watching the run for moves made on another screen.
 
     This used to be a bare input(), which made the CLI deaf: the adventure is a
@@ -267,11 +267,7 @@ def prompt_or_watch(client: wf.DaprWorkflowClient, instance_id: str,
     """
     import select
 
-    # The run id lives in the prompt. Two screens can hold one adventure, so
-    # "are we on the same run?" is a question the player asks constantly, and it
-    # should not need a flag or a console tab to answer.
-    bare = f"\n{instance_id} > "
-    sys.stdout.write(ui.c(ui.BOLD, bare) if not ui.plain() else bare)
+    sys.stdout.write(ui.input_prompt(hint=hint))
     sys.stdout.flush()
     here = scene.get("seq", 0)
 
@@ -388,6 +384,7 @@ def _play(client: wf.DaprWorkflowClient, instance_id: str, rest_seconds: int, fo
         return 1
 
     # ---------------- the loop ----------------
+    first_prompt = True
     while True:
         render(scene)
 
@@ -404,9 +401,10 @@ def _play(client: wf.DaprWorkflowClient, instance_id: str, rest_seconds: int, fo
             return 0
 
         try:
-            raw, scene, output = prompt_or_watch(client, instance_id, scene)
+            raw, scene, output = prompt_or_watch(client, instance_id, scene, hint=first_prompt)
             if raw is None:
                 continue  # the run moved elsewhere; redraw rather than send
+            first_prompt = False
         except (EOFError, KeyboardInterrupt):
             print()
             print(ui.c(ui.DIM, "Left where you stand. The run is still open; start the app "

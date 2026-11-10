@@ -118,12 +118,14 @@ def main() -> int:
     # `--new` is the agent's job: it owns the save, and only its identity can
     # clear it. The first command carries the request.
     first = True
+    prompted = False
     opening = "__reset__" if args.new else "__resume__"
     while True:
         raw = opening if first else None
         if not first:
             try:
-                raw = input(ui.c(ui.BOLD, "> ")).strip()
+                raw = input(ui.input_prompt(hint=not prompted)).strip()
+                prompted = True
             except (EOFError, KeyboardInterrupt):
                 raw = "save and quit"
 
